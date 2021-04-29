@@ -1,0 +1,3426 @@
+				LEAPFROG
+
+			A VIDEO GAME BY VOLTMACE
+
+		FOR THE VOLTMACE DATABASE AND OTHER 
+		CONSOLES IN THE INTERTON FAMILY
+
+
+
+		ORIGINAL CODE in 1982 BY DEREK ANDREWS
+
+		THIS DOCUMENTATION, 2020-1, BY DEREK ANDREWS
+
+
+
+		THIS DISASSEMBLY AND DOCUMENTATION IS A WORK IN PROGRESS
+
+                     LAST UPDATED  10 APRIL 2021
+
+
+		ERRORS, OMMISSIONS AND COMMENTS WELCOME VIA https://sig2650.wordpress.com/contact/
+		OR BY EMAIL IF YOU HAVE MY ADDRESS
+
+
+
+	;
+	;	Disassembled by:
+	;		DASMx object code disassembler
+	;		(c) Copyright 1996-2003   Conquest Consultants
+	;		Version 1.40 (Oct 18 2003)
+	;
+	;	File:		leapfrog2.bin
+	;
+	;	Size:		4096 bytes
+	;	Checksum:	5FEA
+	;	CRC-32:		105EB530
+	;
+	;	Date:		Fri Mar 6 19:14:31 2020
+	;
+	;	CPU:		Signetics 2650 (2650 family)
+	;
+
+
+;	REFERENCES:	datasheets.chipdb.org/Signetics/2650/2650UM.pdf   Processor, unsearchable pdf
+;			amigan.yatho.com/2650UM.html#dar.html             Processor, searchable html
+;			www.mess.org/datasheets/signetics PVI
+;			www.datasheetlib.com/datasheet/244728/hef4512b_philips-semiconductors.html?page=2#datasheet   8-input multiplexer for key switches
+;			www.youtube.com/watch?v=rUkF0c8BNj4 video of game being played
+;
+;       NOTES:		I wrote this code in 1982 while working at Voltmace Ltd, Baldock, UK.
+;			Nearly 40 years later I have disassembled and documented it.
+
+;			Timing of reprogramming of sprites/objects was tricky and may explain
+;			some of the odd ways things were done. Other odd things were done to obfuscate the
+;			code and make disassembly difficult if a competitor tried to modify it; believe me, I very much
+;			regret that right now! 
+
+;			At the time I knew nothing of structured programming. Program design was done with flowcharts
+			which allow code to flow all over the place. Flowcharts are only limited by the size of paper you 
+;			have. Fanfold printer paper went on for miles ;-)
+			
+;			Speed of execution and program space were 
+;                       constraints, as was the limited stack. I was working with a simple development system, a CP/M 
+;			system that enabled me to write code, assemble it, and share the binary with the console. There
+;			was no emulation available. As the source file got bigger, it took something like
+;			45 minutes to do an assembly and print the list file as it constantly transferred data between 
+;			floppy disc and its 64k memory, and churned out folds of paper on a dot matrix printer.
+
+			I joined Voltmace in April 1982. This was the second cartridge I programmed that year. It was 
+			released in early November, so no doubt I was under pressure to complete it in time for Christmas.
+
+;			So yes, I know it's shit code. If you like spaghetti, you have come to the right place.
+;			Having said that, I do think this is the most graphically complex game for this console
+;			and pushes the capabilities of the PVI, and the programmer. Timing of the video generation
+;			is intricate and uses object completion, software delay loops, re-programming the top of 
+;			object shapes before completion, and changing their size during display.
+:
+;			This is a documented list file. It retains the address and data fields. It is not intended
+;			to be a file that can be modified and reassembled. Now that all the data has been located,
+;			it should be a simple job to create a symbol table to disassemble it again in a useable format.
+
+;	OTHER FILES:		
+;			* leapfrog variables.rtf , documents the use of all the
+;			variables used, in as much as I am able, or feel inclined.
+;
+;			* As time permits I will create another file which will show the screen layout as an aid to 
+;			understanding of the video generation. Possibly also flowcharts to help untangle the spaghetti.
+
+;			* sprite_comments.txt is what I used to copy and paste object shapes with roughly the correct
+;			aspect ratio.
+
+;			* leapfrog patches.rtf lists patches I have made during the documentation process. Some make the
+			game easier to play or show of elements that you might never discover.
+;
+
+;
+;	ACKNOWLEDGEMENTS:
+;			In particular James Jacobs of Amigan Software for his website Emerson Arcadia 2001 Central 
+;			and emulator WinArcadia. Also to whomever provided the dump of the Leapfrog cartridge.
+;			Gary Skipper who provided the youtube video of the game being played on a Database; it was a 
+;			valuable reference, but he didn't get to show us the snake, which I had completely forgotten
+;			about until I found it here in a data field.
+
+;	CONVENTIONS:	
+;			In order to make this easy to read, I have tried to adhere to the following conventions.
+;			
+;			SUBROUTINES are delimited between two rows of equal signs:
+;				=====================================================
+;				=====================================================
+
+;			BLOCKS of data and spaghetti code are delimited by a short row of equal signs:
+;				=============
+
+;			WAIT for external event or COUNTER DELAY are highlighted with a row of tildes
+;				~~~~~~~~~~~~~~~~~~~~
+
+;			OTHER  sections of code are separated by blank lines 
+
+;			LABELS are often long and descriptive:
+
+;				Local loops: (e.g. transferring a block of data) all loopHHHH where HHHH is the hex address
+;					i.e.  loop0015
+
+;				Branches: either branchHHHH where HHHH is the hex address
+;					or branch_LABEL where LABEL defines the address
+;					i.e. branch0098  
+
+;				Subroutines: all begin subr_ 
+;					i.e.  subr_wait_vert_reset	
+
+;				Branches within subroutines: initials of the subroutine name followed by 1,2,....
+;					i.e. sss1, sss2 in subr_select_start
+
+;				Arrays: arrays of variables are named array_... and arrays of constants are named table_...
+
+;				PVI registers generally use the same names and conventions as in the datasheet.
+;					So I use HC and VC for horizontal and vertical coordinates rather than X and Y
+;					I make an exception for the confusing BACKGROUND, and use GRID instead. 
+
+;			OPERATORS
+;				Essentially follows C conventions:
+;					=   +   -    ++ (INCREMENT)    -- (DECREMENT)
+;					==  !=   >   <   >=   <=  
+;					&&  | (OR)  ^ (XOR)   <<  >>  (SHIFT LEFT/RIGHT)  
+				Operations on specific bits in a register or variable are written like
+					r0{bit 7}   or   variable_name{bits 610}
+
+;			STRUCTURE is far from conventional and I use if, then, else, for, case, etc as best I can, aiming for 
+;				clarity over strict adherence to any norms of syntax or even consistency throughout this document.
+;				I use EXIT in some structures; in unstructured code 'EXIT to' indicates that it branches to another
+				part of the program and doesn't return to anywhere near the same part of this plate of spaghetti.
+
+;			INDIRECT addressing is used in many places and for clarity I have added the final address to the code 
+				between @ symbols, for example:-   strr,r2	*X0CA5	@control_bits@
+			INDIRECT data is sometimes accessed; the actual value is shown #$5A#
+
+			ABBREVIATIONS:	LUT == look up table
+
+	GRAPHICS:	
+			There are several distinct phases of the game:
+				* The introductory title: LEAPFROG, by VOLTMACE
+				* Attract mode screen, showing game play. 
+				    (Implemented by faking joystick forward and careful timing of obstacle start positions 
+					to ensure frog gets across on first attempt)
+				* Select one or two player game
+				* Main game play
+				* You beat it ( score 9999 and a special message comes up, implemented using the grid)
+
+			The main game play screen is divided into 11 horizontal layers named as follows:
+				
+				Frogs in holes
+				A_logs
+				A_lillies
+				B_logs
+				B_Lillies
+				Snake (on median)
+				A_trucks
+				A_cars
+				B_cars
+				B_trucks (Voltmace trucks)
+				Start frog / time left / lives left
+
+The player's frog is always object 1 and can roam over most of the screen. All other items are duplicates of objects 2, 3 and 4.
+
+The size of the logs and lily objects are reduced to size x1 just as soon as the visible part of them has been 
+ displayed. The log is two rows of pixels at size x8 and the lily is five rows at size x2.
+
+The snake's tongue and eyeballs (see 0F38) are object 2, size x1, and the head/body are objects 3 and 4, size x2. The vertical offsets between the snake and the 
+B_Lillies and A_trucks are therefore different for the head and body components.
+
+
+
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+			org	H'0000'
+				;
+0000		RESET:
+0000 : 20		eorz	r0		;r0 = r0 XOR r0 = 0
+0001 : 1B 08		bctr,un	START
+		;	=============
+
+		interrupt_vector:
+0003 : 17		retc,un			;exit interupts immediately. They should never occur except perhaps 
+						;before initialization is complete
+		;	=============
+
+0004		init_title:		; initial values of variables used in title animation
+0004 : C0		db	H'C0'		; HC_VOLTMACE 
+0005 : D8		db	H'D8'		; HC_by 
+0006 : 40		db	H'40'		; brief_pause_at_startup
+0007 : 19		db	H'19'		; bounce_index
+0008 : 20		db	H'20'		; byVOLTMACE_timer  
+0009 : 00		db	H'00'		; NOT USED? 
+000A : 80		db	H'80'		; pause_at_end
+		;	=============
+
+000B		START:				;  ********* INITIALIZATION  ************
+
+000B : 07 AA		lodi,r3	H'AA'		;blank the score digits
+000D : CF 1F C8		stra,r3	score12
+0010 : CF 1F C9		stra,r3	score34
+
+0013 : 07 C8		lodi,r3	H'C8'		;clear all other PVI registers
+0015		loop0015:
+0015 : CF 5F 00		stra,r0	object1SHAPE,r3,-
+0018 : 5B 7B		brnr,r3	loop0015
+
+001A : 04 20		lodi,r0	H'20'		; %00100000
+001C : 92		lpsu			; inhibit interrupts, select joystick 0, stack pointer 0
+001D : 04 02		lodi,r0	H'02'		; %00000010
+001F : 93		lpsl			; set LOGICAL comparisons, ie not two's complement
+
+0020 : 04 04		lodi,r0	H'04'
+0022 : CC 1E 80		stra,r0	NOISE		; (note - the database circuitry maybe different to the interton in this respect)
+
+0025 : 05 05		lodi,r1	H'05'
+0027 : CD 1F 6A		stra,r1	animation_delay  	; animation_delay = 05 
+
+002A : 05 07		lodi,r1	H'07'
+002C		loop002C:				;initialize variables for the title screen
+002C : 0D 40 04		loda,r0	init_title,r1,-
+002F : CD 7F 57		stra,r0	HC_VOLTMACE,r1
+0032 : 59 78		brnr,r1	loop002C
+
+; **************************************************************************************************************************************
+; ***********************************************     TITLE ANIMATION      *************************************************************
+; **************************************************************************************************************************************
+
+; 	There are several distinct phases of the title animation:
+
+;	1. A pause of 64 frames with blank screen
+;	2. The word "LEAPFROG" bouncing forwards
+;	3. "LEAPFROG" stationary, and "by VOLTMACE" moving in from opposite sides
+;	4. A pause of 128 frames with the title displayed static
+
+;	EXIT to game, either at the end of 4, or any time if SELECT key is pressed
+
+
+0034		loop0034:					
+0034 : 3F 0D 54		bsta,un	subr_wait_vert_reset		; ~~~~~~~~~~~~~~~~~~ wait for vertical reset ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+0037 : 0D 1F CA		loda,r1	backgroundcollision_complete	; clear VRLE and collision bits.
+
+003A : 0D 1F 59		loda,r1	brief_pause_at_startup 		; if brief_pause_at_startup != 0
+003D : 98 2A		bcfr,eq	branch0069			; then goto branch0069 (execute brief pause at startup)
+
+003F : 0C 1F 6A		loda,r0	animation_delay			 
+0042 : A4 01		subi,r0	H'01'				; animation_delay--
+0044 : CC 1F 6A		stra,r0 animation_delay			; if animation_delay != 0
+0047 : 5C 00 98		brna,r0	branch0098			; then goto branch0098 
+									; (output all objects to screen, without moving anything)	
+
+004A : 04 02		lodi,r0	H'02'				 
+004C : CC 1F 6A		stra,r0	animation_delay			; animation_delay = 2
+
+004F : 0D 1E 8B		loda,r1	console				; read the console buttons
+0052 : F5 80		tmi,r1	H'80'
+0054 : 1C 04 5A		bcta,eq	SELECT				; if select button pressed, goto SELECT 
+
+0057 : 0D 1F 5A		loda,r1	bounce_index
+005A : 98 14		bcfr,eq	branch0070			; if bounce_index != 0,  goto branch0070 (execute bouncing animation)
+
+005C : 0D 1F 5B		loda,r1	byVOLTMACE_timer 					 
+005F : 98 1B		bcfr,eq	branch007C			; if byVOLTMACE_timer != 0, goto branch007C (execute "by VOLTMACE" animation)
+
+0061 : 0D 1F 5D		loda,r1	pause_at_end				
+0064 : 98 2D		bcfr,eq	L0093				; if pause_at_end != 0, goto branch0093
+
+0066 : 1F 01 AE		bcta,un	branch01AE			; goto branch01AE
+		;	==================
+								
+
+0069		branch0069:		; execute brief pause at startup
+0069 : A5 01		subi,r1	H'01'
+006B : CD 1F 59		stra,r1	brief_pause_at_startup		; brief_pause_at_startup --
+006E : 1B 44		bctr,un	loop0034			; goto loop0034 (wait for next frame)
+		;	=================
+
+
+
+
+0070		branch0070:		; execute bouncing animation
+0070 : A5 01		subi,r1	H'01'				; bounce_index --
+0072 : CD 1F 5A		stra,r1	bounce_index
+
+0075 : 06 04		lodi,r2	H'04'
+0077 : CE 1F 6A		stra,r2	animation_delay 		; animation_delay = 4
+007A : 1B 1C		bctr,un	branch0098			; goto branch0098 (output all objects to screen)
+		;	==================
+
+
+007C		branch007C:		; execute "by VOLTMACE" animation
+007C : A5 01		subi,r1	H'01'
+007E : CD 1F 5B		stra,r1	byVOLTMACE_timer 	; byVOLTMACE_timer  --
+
+0081 : 0D 1F 57		loda,r1	HC_VOLTMACE
+0084 : A5 04		subi,r1	H'04'
+0086 : CD 1F 57		stra,r1	HC_VOLTMACE	; move "VOLTMACE" 4 pixels left
+
+0089 : 0D 1F 58		loda,r1	HC_by 		
+008C : 85 04		addi,r1	H'04'
+008E : CD 1F 58		stra,r1	HC_by 		; move "by" 4 pixels right 
+
+0091 : 1B 05		bctr,un	branch0098	; goto branch0098 ( output all objects to screen)
+		;	==================
+
+0093		branch0093:		
+0093 : A5 01		subi,r1	H'01'
+0095 : CD 1F 5D		stra,r1	pause_at_end		; var_intro_counter --
+
+
+0098		branch0098:		; output all objects to screen
+0098 : 05 2D		lodi,r1	H'2D'
+009A : CD 1F C1		stra,r1	colour12			; all objects green
+009D : CD 1F C2		stra,r1	colour34
+
+00A0 : 0D 1F 5A		loda,r1	bounce_index		; using bounce_index as an index:
+00A3 : 0D 61 B6		loda,r0	horiz_pos_LEAPFROG_1,r1
+00A6 : CC 1F 0A		stra,r0	object1HC			; set object1 horizontal
+00A9 : 8D 61 D0		adda,r0	inc_horiz_pos_LEAPFROG_23,r1
+00AC : CC 1F 1A		stra,r0	object2HC			; set object2 horizontal
+00AF : 8D 61 D0		adda,r0	inc_horiz_pos_LEAPFROG_23,r1
+00B2 : CC 1F 2A		stra,r0	object3HC			; set object3 horizontal
+00B5 : 8D 62 04		adda,r0	inc_horiz_pos_LEAPFROG_4,r1
+00B8 : CC 1F 4A		stra,r0	object4HC			; set object4 horizontal
+
+00BB : 0D 61 EA		loda,r0	vert_pos_LEAPFROG_1234,r1
+00BE : CC 1F 0C		stra,r0	object1VC			; set all objects same vertical
+00C1 : CC 1F 1C		stra,r0	object2VC
+00C4 : CC 1F 2C		stra,r0	object3VC
+00C7 : CC 1F 4C		stra,r0	object4VC
+
+00CA : 45 07		andi,r1	H'07'				; use bits %00000111 of bounce_index
+00CC : CD 1F C7		stra,r1	sound				; for bouncy sound. Repeats three times.
+	
+00CF : A4 70		subi,r0	H'70'				; subtract $70 (112) from vertical
+00D1 : 24 FF		eori,r0	H'FF'				; invert the bits - this result when added to the
+								;   original vertical position always yields $6F
+								;   so the next line (by) won't bounce
+00D3 : CC 1F 0D		stra,r0	object1VCB			; set all vertical offsets for duplicates
+00D6 : CC 1F 1D		stra,r0	object2VCB
+00D9 : CC 1F 2D		stra,r0	object3VCB
+00DC : CC 1F 4D		stra,r0	object4VCB
+
+00DF : 0D 1F 58		loda,r1	HC_by   			; 
+00E2 : CD 1F 0B		stra,r1	object1HCB			; set HC of "by"
+00E5 : 04 D0		lodi,r0	H'D0'
+00E7 : CC 1F 1B		stra,r0	object2HCB			; hide dupicates234 offscreen to right
+00EA : CC 1F 2B		stra,r0	object3HCB
+00ED : CC 1F 4B		stra,r0	object4HCB
+
+00F0 : 05 0A		lodi,r1	H'0A'
+00F2 : 0E 1F 5A		loda,r2	bounce_index
+00F5 : E6 11		comi,r2	H'11'				; if bounce_index < $11,
+00F7 : 1A 1F		bctr,lt	branch0118			; then 	goto branch0118 and display "LEAPFROG"
+00F9		loop00F9:					; else
+00F9 : 0D 41 0E		loda,r0	solidbar,r1,-				; output top 5 lines of solid colour, rest blank
+00FC : CD 7F 00		stra,r0	object1SHAPE,r1				; This is the tiniest iteration of the LEAPFROG intro
+00FF : CD 7F 10		stra,r0	object2SHAPE,r1
+0102 : CD 7F 20		stra,r0	object3SHAPE,r1
+0105 : CD 7F 40		stra,r0	object4SHAPE,r1
+0108 : 59 6F		brnr,r1	loop00F9
+010A : 1B 32		bctr,un	branch013E				;goto branch013E
+		;	=============
+010C : 00 87		db	H'00', H'87'		; ***** WHAT IS THIS? *****
+							; I set a watchpoint and didn't find anything reading it
+010E		solidbar:
+010E : FF		db	H'FF'
+010F : FF		db	H'FF'
+0110 : FF		db	H'FF'
+0111 : FF		db	H'FF'
+0112 : FF		db	H'FF'
+0113 : 00		db	H'00'
+0114 : 00		db	H'00'
+0115 : 00		db	H'00'
+0116 : 00		db	H'00'
+0117 : 00		db	H'00'
+		;	=============
+
+0118		loop0118:				;from 00f7 with r1=$0A
+0118 : 0D 42 50		loda,r0	LE,r1,-			;set object shapes 1,2,3,4 to LE AP FR OG
+011B : CD 7F 00		stra,r0	object1SHAPE,r1
+011E : 0D 62 5A		loda,r0	AP,r1
+0121 : CD 7F 10		stra,r0	object2SHAPE,r1
+0124 : 0D 62 64		loda,r0	FR,r1
+0127 : CD 7F 20		stra,r0	object3SHAPE,r1
+012A : 0D 62 6E		loda,r0	OG,r1
+012D : CD 7F 40		stra,r0	object4SHAPE,r1
+0130 : 59 66		brnr,r1	loop0118
+
+0132 : 04 AA		lodi,r0	H'AA'			; r0 = $AA, ready to set sizes %10
+
+0134 : 0E 1F 5A		loda,r2	bounce_index	; if bounce_index == 0
+0137 : 18 06		bctr,eq	branch013F		; then goto branch013F
+							; else
+0139 : 50		rrr,r0					; rotate r0 (=$55, ready to set sizes %01)
+013A : E6 09		comi,r2	H'09'				; if bounce_index < $09
+013C : 1A 01		bctr,lt	branch013F			; then	goto branch013F
+
+013E		branch013E:  (from 010A)
+013E : 20		eorz	r0			; r0=0 (ready to set all size %00)
+013F		branch013F:
+013F : CC 1F C0		stra,r0	objectsizes		; set object sizes (either %00, %01, %10)
+							
+0142 : 3F 0D 9B		bsta,un	subr_wait_obj4_complete	; wait for primary objects to complete~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+0145 : 20		eorz	r0
+0146 : CC 1F C1		stra,r0	colour12		; set all colours to white
+0149 : CC 1F C2		stra,r0	colour34
+
+014C : 04 30		lodi,r0	H'30'			; set vert offset for second set of duplicate objects
+014E : CC 1F 0D		stra,r0	object1VCB
+0151 : CC 1F 1D		stra,r0	object2VCB
+0154 : CC 1F 2D		stra,r0	object3VCB
+0157 : CC 1F 4D		stra,r0	object4VCB
+
+015A : 05 0A		lodi,r1	H'0A'
+015C		loop015C:
+015C : 0D 42 1E		loda,r0	by,r1,-
+015F : CD 7F 00		stra,r0	object1SHAPE,r1		; load "by" shape into object 1
+0162 : 59 78		brnr,r1	loop015C
+
+0164 : 04 55		lodi,r0	H'55'			; set all sizes to %01
+0166 : CC 1F C0		stra,r0	objectsizes
+
+0169 : 3F 0D 9B		bsta,un	subr_wait_obj4_complete ; wait for first duplicate object to complete~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+016C : 04 FE		lodi,r0	H'FE'			; push third duplicates below screen
+016E : CC 1F 0D		stra,r0	object1VCB
+0171 : CC 1F 1D		stra,r0	object2VCB
+0174 : CC 1F 2D		stra,r0	object3VCB
+0177 : CC 1F 4D		stra,r0	object4VCB
+
+017A : 0D 1F 57		loda,r1	HC_VOLTMACE	 
+017D : CD 1F 0B		stra,r1	object1HCB		; horizontal position of "VO" = HC_VOLTMACE
+0180 : 85 10		addi,r1	H'10'
+0182 : CD 1F 1B		stra,r1	object2HCB		; other letter pairs have offset of 16 
+0185 : 85 10		addi,r1	H'10'
+0187 : CD 1F 2B		stra,r1	object3HCB
+018A : 85 10		addi,r1	H'10'
+018C : CD 1F 4B		stra,r1	object4HCB
+
+
+018F : 05 0A		lodi,r1	H'0A'
+0191		loop0191:
+0191 : 0D 42 28		loda,r0	VO,r1,-
+0194 : CD 7F 00		stra,r0	object1SHAPE,r1		; load "VOLTMACE" shapes into objects 1234
+0197 : 0D 62 32		loda,r0	LT,r1
+019A : CD 7F 10		stra,r0	object2SHAPE,r1
+019D : 0D 62 3C		loda,r0	MA,r1
+01A0 : CD 7F 20		stra,r0	object3SHAPE,r1
+01A3 : 0D 62 46		loda,r0	CE,r1
+01A6 : CD 7F 40		stra,r0	object4SHAPE,r1
+01A9 : 59 66		brnr,r1	loop0191
+
+
+01AB : 1F 00 34		bcta,un	loop0034	; goto loop0034 (wait for next frame)
+		;       =============
+
+01AE		branch01AE:			; from 0066
+01AE : 06 40		lodi,r2	H'40'
+01B0 : CE 1F AC		stra,r2	control_bits	; set attract mode, one player
+01B3 : 1F 02 78		bcta,un	start_play
+		;       =============
+
+01B6		horiz_pos_LEAPFROG_1:	; this defines the HC of "LE" during the introduction.
+					; indexed by bounce_index.
+					; see $00A0 for the code that uses these tables.
+01B6 : 20		db	H'20'
+01B7 : 1E		db	H'1E'
+01B8 : 1D		db	H'1D'
+01B9 : 1B		db	H'1B'
+01BA : 1A		db	H'1A'
+01BB : 19		db	H'19'
+01BC : 18		db	H'18'
+01BD : 17		db	H'17'
+01BE : 17		db	H'17'
+01BF : 16		db	H'16'
+01C0 : 15		db	H'15'
+01C1 : 14		db	H'14'
+01C2 : 14		db	H'14'
+01C3 : 13		db	H'13'
+01C4 : 13		db	H'13'
+01C5 : 12		db	H'12'
+01C6 : 12		db	H'12'
+01C7 : 12		db	H'12'
+01C8 : 12		db	H'12'
+01C9 : 11		db	H'11'
+01CA : 11		db	H'11'
+01CB : 11		db	H'11'
+01CC : 10		db	H'10'
+01CD : 10		db	H'10'
+01CE : 10		db	H'10'
+01CF : 10		db	H'10'
+
+01D0		inc_horiz_pos_LEAPFROG_23:	; this defines the HC of "AP" and "FR" during the introduction
+						; but rather than manually calculate the absolute HC, these are 
+						; offsets which change in sync with the size of the objects.
+						; This enables the same table to be used for objects 2 and 3.
+						; Indexed by bounce_index
+01D0 : 20		db	H'20'
+01D1 : 10		db	H'10'
+01D2 : 10		db	H'10'
+01D3 : 10		db	H'10'
+01D4 : 10		db	H'10'
+01D5 : 10		db	H'10'
+01D6 : 10		db	H'10'
+01D7 : 10		db	H'10'
+01D8 : 10		db	H'10'
+01D9 : 08		db	H'08'
+01DA : 08		db	H'08'
+01DB : 08		db	H'08'
+01DC : 08		db	H'08'
+01DD : 08		db	H'08'
+01DE : 08		db	H'08'
+01DF : 08		db	H'08'
+01E0 : 08		db	H'08'
+01E1 : 02		db	H'02'
+01E2 : 02		db	H'02'
+01E3 : 02		db	H'02'
+01E4 : 02		db	H'02'
+01E5 : 02		db	H'02'
+01E6 : 02		db	H'02'
+01E7 : 02		db	H'02'
+01E8 : 02		db	H'02'
+01E9 : 02		db	H'02'
+
+01EA		vert_pos_LEAPFROG_1234:		; this defines the VC of "LEAPFROG" during the introduction
+						; indexed by bounce_index
+						; + - = indicates change from last value, starting at the bottom.
+01EA : 28		db	H'28'	;+
+01EB : 11		db	H'11'	;-	
+01EC : 15		db	H'15'	;-
+01ED : 1D		db	H'1D'	;-
+01EE : 22		db	H'22'	;-
+01EF : 2A		db	H'2A'	;-
+01F0 : 31		db	H'31'	;-
+01F1 : 3A		db	H'3A'	;-
+01F2 : 4C		db	H'4C'	;+
+01F3 : 42		db	H'42'	;-
+01F4 : 44		db	H'44'	;-
+01F5 : 46		db	H'46'	;-	
+01F6 : 4A		db	H'4A'	;-
+01F7 : 4D		db	H'4D'	;-
+01F8 : 51		db	H'51'	;-
+01F9 : 53		db	H'53'	;-
+01FA : 5E		db	H'5E'	;+
+01FB : 55		db	H'55'	;-
+01FC : 57		db	H'57'	;-
+01FD : 59		db	H'59'	;-
+01FE : 5B		db	H'5B'	;-
+01FF : 5D		db	H'5D'	;-
+0200 : 60		db	H'60'	;-
+0201 : 63		db	H'63'	;-
+0202 : 67		db	H'67'	;=
+0203 : 67		db	H'67'	;
+
+0204		inc_horiz_pos_LEAPFROG_4:	; this defines the HC of "OG" during the introduction
+						; similar to inc_horiz_pos_LEAPFROG_23, but in this case
+						; the offset has to include the space after the "R"; 
+						; (see the shape definitions below). 
+						; indexed by bounce_index
+0204 : 24		db	H'24'
+0205 : 12		db	H'12'
+0206 : 12		db	H'12'
+0207 : 12		db	H'12'
+0208 : 12		db	H'12'
+0209 : 12		db	H'12'
+020A : 12		db	H'12'
+020B : 12		db	H'12'
+020C : 12		db	H'12'
+020D : 09		db	H'09'
+020E : 09		db	H'09'
+020F : 09		db	H'09'
+0210 : 09		db	H'09'
+0211 : 09		db	H'09'
+0212 : 09		db	H'09'
+0213 : 09		db	H'09'
+0214 : 09		db	H'09'
+0215 : 02		db	H'02'
+0216 : 02		db	H'02'
+0217 : 02		db	H'02'
+0218 : 02		db	H'02'
+0219 : 02		db	H'02'
+021A : 02		db	H'02'
+021B : 02		db	H'02'
+021C : 02		db	H'02'
+021D : 02		db	H'02'
+
+021E		by:
+021E : 80		db	H'80'	████            
+021F : 80		db	H'80'	████            
+0220 : EA		db	H'EA'	████████████    
+0221 : AA		db	H'AA'	████    ████    ████    ████    
+0222 : AA		db	H'AA'	████    ████    ████    ████    
+0223 : EE		db	H'EE'	████████████    ████████████    
+0224 : 02		db	H'02'	                        ████    
+0225 : 02		db	H'02'	                        ████    
+0226 : 0E		db	H'0E'	                ████████████    
+0227 : 00		db	H'00'
+0228		VO:
+0228 : AE		db	H'AE'	████    ████    ████████████    
+0229 : AE		db	H'AE'	████    ████    ████████████    
+022A : AA		db	H'AA'	████    ████    ████    ████    
+022B : AA		db	H'AA'	████    ████    ████    ████    	
+022C : AA		db	H'AA'	████    ████    ████    ████    
+022D : AA		db	H'AA'	████    ████    ████    ████    
+022E : AA		db	H'AA'	████    ████    ████    ████    
+022F : AA		db	H'AA'	████    ████    ████    ████    
+0230 : 4E		db	H'4E'	    ████        ████████████    
+0231 : 4E		db	H'4E'	    ████        ████████████    
+0232		LT:
+0232 : BB		db	H'BB'	████    ████████████    ████████
+0233 : BB		db	H'BB'	████    ████████████    ████████
+0234 : 92		db	H'92'	████        ████        ████    
+0235 : 92		db	H'92'	████        ████        ████    
+0236 : 92		db	H'92'	████        ████        ████    
+0237 : 92		db	H'92'	████        ████        ████    
+0238 : 92		db	H'92'	████        ████        ████    
+0239 : 92		db	H'92'	████        ████        ████    
+023A : D2		db	H'D2'	████████    ████        ████    
+023B : D2		db	H'D2'	████████    ████        ████    
+023C		MA:
+023C : EE		db	H'EE'	████████████    ████████████    
+023D : EE		db	H'EE'	████████████    ████████████    
+023E : AA		db	H'AA'	████    ████    ████    ████    
+023F : AA		db	H'AA'	████    ████    ████    ████    
+0240 : AA		db	H'AA'	████    ████    ████    ████    
+0241 : AE		db	H'AE'	████    ████    ████████████    
+0242 : 2E		db	H'2E'	████    ████ 	████████████   
+0243 : 2A		db	H'2A'	████    ████   	████    ████     
+0244 : 2A		db	H'2A'	████    ████   	████    ████ 
+0245 : 2A		db	H'2A'	████    ████   	████    ████ 
+0246		CE:
+0246 : EE		db	H'EE'	████████████    ████████████    
+0247 : EE		db	H'EE'	████████████    ████████████    
+0248 : 88		db	H'88'	████            ████            
+0249 : 88		db	H'88'	████            ████            
+024A : 8C		db	H'8C'	████            ████████        
+024B : 8C		db	H'8C'	████            ████████        
+024C : 88		db	H'88'	████            ████            
+024D : 88		db	H'88'	████            ████            
+024E : EE		db	H'EE'	████████████    ████████████    
+024F : EE		db	H'EE'	████████████    ████████████    
+0250		LE:
+0250 : 8E		db	H'8E'	████            ████████████    
+0251 : 8E		db	H'8E'	████            ████████████    
+0252 : 88		db	H'88'	████            ████            
+0253 : 88		db	H'88'	████            ████            
+0254 : 8C		db	H'8C'	████            ████████        
+0255 : 8C		db	H'8C'	████            ████████        
+0256 : 88		db	H'88'	████            ████            
+0257 : 88		db	H'88'	████            ████            
+0258 : EE		db	H'EE'	████████████    ████████████    
+0259 : EE		db	H'EE'	████████████    ████████████    
+025A		AP:			
+025A : EE		db	H'EE'	████████████    ████████████    
+025B : EE		db	H'EE'	████████████    ████████████    
+025C : AA		db	H'AA'	████    ████    ████    ████    
+025D : AA		db	H'AA'	████    ████    ████    ████    
+025E : EE		db	H'EE'	████████████    ████████████    
+025F : EE		db	H'EE'	████████████    ████████████    
+0260 : A8		db	H'A8'	████    ████    ████            
+0261 : A8		db	H'A8'	████    ████    ████            
+0262 : A8		db	H'A8'	████    ████    ████            
+0263 : A8		db	H'A8'	████    ████    ████            
+0264		FR:
+0264 : EF		db	H'EF'	████████████    ████████████████
+0265 : EF		db	H'EF' 	████████████    ████████████████
+0266 : 89		db	H'89'	████            ████        ████
+0267 : 89		db	H'89'	████            ████        ████
+0268 : CF		db	H'CF'	████████        ████████████████
+0269 : CF		db	H'CF'	████████        ████████████████
+026A : 8A		db	H'8A'	████            ████    ████    
+026B : 8A		db	H'8A'	████            ████    ████    
+026C : 89		db	H'89'	████            ████        ████
+026D : 89		db	H'89'	████            ████        ████
+026E		OG:
+026E : EF		db	H'EF'	████████████    ████████████████
+026F : EF		db	H'EF'	████████████    ████████████████
+0270 : A8		db	H'A8'	████    ████    ████            
+0271 : A8		db	H'A8'	████    ████    ████            
+0272 : A8		db	H'A8'	████    ████    ████            
+0273 : AB		db	H'AB'	████    ████    ████    ████████
+0274 : AB		db	H'AB'	████    ████    ████    ████████
+0275 : A9		db	H'A9'	████    ████    ████        ████
+0276 : EF		db	H'EF'	████████████    ████████████████
+0277 : EF		db	H'EF'	████████████    ████████████████
+
+
+
+
+
+; ***************************************************************************************************************
+; *****************************************  GAME PLAY  *********************************************************
+; ***************************************************************************************************************
+
+							
+0278		start_play:			; from 01B3 or 045d
+0278 : 05 20		lodi,r1	H'20'
+027A		loop027A:
+027A : 0D 4E D8		loda,r0	init_scratch,r1,-
+027D : CD 7F 4E		stra,r0	timer_P,r1	; initialise 32 variables in scratch
+0280 : 59 78		brnr,r1	loop027A
+
+
+0282 : 04 02		lodi,r0	H'02'
+0284 : 93		lpsl					; logical comparisons ; without carry
+
+
+0285 : 05 28		lodi,r1	H'28'
+0287		loop0287:
+0287 : 0D 4E F8		loda,r0	initialise_1,r1,-		; initialise 40 bytes in vertical bar definition area
+028A : CD 7F 80		stra,r0	grid_v1,r1
+028D : 59 78		brnr,r1	loop0287
+
+
+028F : 3F 0E 32		bsta,un	subr_init_PVI			; all objects size $00, all objects green
+								; blank score, 4 digits at bottom of screen
+								; enable grid, grid and screen both black
+								; ALSO stopwatch=$FF and lifes_left=$33
+
+0292 : 0D 1F AC		loda,r1	control_bits
+0295 : 45 01		andi,r1	H'01'				
+0297 : 51		rrr,r1
+0298 : CD 1F A3		stra,r1	control_bits_2			; control_bits_2 = $00
+								; control_bits_2{bit7} = control_bits{bit0}
+
+029B : 05 0E		lodi,r1	H'0E'
+029D		loop029D:
+029D : 0D 4F 20		loda,r0	short_frog,r1,-
+02A0 : CD 7F 00		stra,r0	object1SHAPE,r1			; load frog into object 1, postion $75 horiz, $FC vert, duplicates offscreen,
+02A3 : 59 78		brnr,r1	loop029D				; $FC vert, duplicates offscreen
+
+02A5 : 05 13		lodi,r1	H'13'				; set vertical coordinates of objects 234 (frogs in bank ?)
+02A7 : CD 1F 1C		stra,r1	object2VC	
+02AA : CD 1F 2C		stra,r1	object3VC
+02AD : CD 1F 4C		stra,r1	object4VC
+
+
+02B0		start_new_frame:	; ******************* RETURNS HERE AT END OF EACH FRAME ***************************
+
+
+02B0 : 3F 0D 54		bsta,un	subr_wait_vert_reset		; ~~~~~~~~~~~~~~~~~~ wait for vertical reset ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+02B3 : 0F 1F CA		loda,r3	backgroundcollision_complete	; reset background collision/complete status etc
+02B6 : 0F 1F A3		loda,r3	control_bits_2
+02B9 : 47 08		andi,r3	H'08'				; extract bit 3 (player 1 or 2) of control_bits_2
+02BB : 53		rrr,r3
+02BC : 53		rrr,r3					; shift bit 3 to bit 0
+02BD : 53		rrr,r3
+02BE : 0F 7F CC		loda,r0	adpot1,r3			; and use as index to read pot 1 or 2 (player 1 or 2)
+02C1 : C3		strz	r3				; r3= a/d value
+
+02C2 : 0E 1F CB		loda,r2	vrle_collision
+02C5 : CE 1F 0E		stra,r2	copy_interobject		; save copy of interobject collision
+
+02C8 : 12		spsu					
+02C9 : 24 40		eori,r0	H'40'				; invert flag bit in psu,
+02CB : 92		lpsu					; switching from reading vertical / horizontal pot 
+					
+02CC : 0E 1F 4F		loda,r2	timer_Q
+02CF : 5E 03 77		brna,r2	EndOfRun			; if timer_Q != 0 goto EndOfRun 
+
+02D2 : 0E 1F 1E		loda,r2	stopwatch
+02D5 : 1C 04 97		bcta,eq	frog_mishap_2			; if stopwatch = 0 , goto frog_mishap_2 (looks like drowning or end of frame??)
+
+02D8 : 0E 1F 9A		loda,r2	joystick_udlr		;CHECK TO SEE IF FROG HAS ALREADY STARTED A MOVE
+02DB : F6 08		tmi,r2	H'08'	
+02DD : 1C 06 37		bcta,eq	move_frog_up		; if bit3 of joystick_udlr is 1, go and move frog up
+02E0 : F6 04		tmi,r2	H'04'
+02E2 : 1C 06 46		bcta,eq	move_frog_down		; if bit2 of joystick_udlr is 1, go and move frog down
+02E5 : F6 02		tmi,r2	H'02'
+02E7 : 1C 06 5A		bcta,eq	move_frog_left		; if bit1 of joystick_udlr is 1, go and move frog left
+02EA : F6 01		tmi,r2	H'01'
+02EC : 1C 06 50		bcta,eq	move_frog_right		; if bit0 of joystick_udlr is 1, go and move frog right
+
+02EF : 0E 1F 9B		loda,r2	frog_animation
+02F2 : 9C 06 62		bcfa,eq	frog_moved		; if frog_animation is not 0, goto frog_moved
+
+02F5 : 0D 1F AC		loda,r1	control_bits
+02F8 : F5 40		tmi,r1	H'40'
+02FA : 18 39		bctr,eq	joystick_up		; if bit6 of control_bits == 1, (attract mode) goto joystick_up
+
+02FC : E7 20		comi,r3	H'20'			; (r3 still holds the a/d value)
+02FE : 1A 23		bctr,lt	a2d_low			; if a/d < $20, goto a2d_low			
+0300 : E7 B8		comi,r3	H'B8'
+0302 : 9D 03 42		bcfa,gt	joystick_centred	; if a/d <= $B8, goto joystick_centred  (joystick not indicating move)
+
+0305 : F4 40		tmi,r0	H'40'			; r0 still has copy of PSU ?
+0307 : 98 0D		bcfr,eq	joystick_down		; if flag bit is 1 (vertical), goto joystick_down
+
+
+0309 : 05 01		lodi,r1	H'01'
+030B : CD 1F 9A		stra,r1	joystick_udlr		; else joystick_udlr = $01 (joystick right)
+030E : 06 11		lodi,r2	H'11'
+0310 : CE 1F 9B		stra,r2	frog_animation		; frog_animation = $11
+0313 : 1F 06 50		bcta,un	move_frog_right
+		;	=======================
+
+
+0316		joystick_down:			; from 0307
+0316 : 05 04		lodi,r1	H'04'
+0318 : CD 1F 9A		stra,r1	joystick_udlr	; joystick_udlr = $04 (joystick down)
+031B : 06 0F		lodi,r2	H'0F'
+031D : CE 1F 9B		stra,r2	frog_animation	; frog_animation = $0F
+0320 : 1F 06 46		bcta,un	move_frog_down
+		;	======================
+
+0323		a2d_low:				; from 02fe, a/d value < 20
+0323 : F4 40		tmi,r0	H'40'		; r0 still has copy of PSU ?
+0325 : 9C 03 35		bcfa,eq	joystick_up	; if flag bit is 1(vertical), goto joystick_up
+0328 : 05 02		lodi,r1	H'02'		
+032A : CD 1F 9A		stra,r1	joystick_udlr	; else joystick_udlr = $02 (joystick left)
+032D : 06 11		lodi,r2	H'11'
+032F : CE 1F 9B		stra,r2	frog_animation	; frog_animation = $11
+0332 : 1F 06 5A		bcta,un	move_frog_left
+		;	======================
+
+0335		joystick_up:			;from 02fa, 0325,
+0335 : 05 08		lodi,r1	H'08'
+0337 : CD 1F 9A		stra,r1	joystick_udlr	; joystick_udlr = $08 (joystick up)
+033A : 06 0F		lodi,r2	H'0F'
+033C : CE 1F 9B		stra,r2	frog_animation	; frog_animation = $0F
+033F : 1F 06 37		bcta,un	move_frog_up
+		;	====================
+
+
+0342		joystick_centred:			;from 0302 (joystick not indicating move required)
+0342 : 0C 1F 0C		loda,r0	object1VC		; case:
+0345 : E4 3C		comi,r0	H'3C'			; 	if frog is at $3C vertical (A_lillies) goto set_A_lily_variables
+0347 : 18 1B		bctr,eq	set_A_lily_variables	  
+0349 : E4 6C		comi,r0	H'6C'			; 	if frog is NOT at $6C vertical (B_lillies)  goto branch 034B
+034B : 9C 06 94		bcfa,eq	test_frog_position
+		set_B_lily_variables:
+034E : 0E 1F 8F		loda,r2	status_B_lillies 
+0351 : 0F 1F 90		loda,r3	counter_flash_B_lillies	; 	else r2,r3 = variables for flashing B lillies
+							; end case
+
+0354		branch0354:			; from 0364, set_A_lily_variables
+		
+0354 : 9C 06 94		bcfa,eq	test_frog_position	; if counter_flash_X_lillies != 0, EXIT to test_frog_position
+
+							; else
+0357 : 3F 0B FE		bsta,un	subr_test_interobject		; GOSUB subr_test_interobject;  
+									; returns with r1 = 0, 1 or 2 depending on object hit.
+									; doesn't use r2
+									; (NOTE, THERE IS NO OPTION FOR NOTHING HIT)
+									; (MUST THEREFORE ASSUME THAT THIS HAS BEEN DETERMINED BEFORE ARRIVING HERE)
+
+035A : 0D 65 20		loda,r0	LUT_index_blue_lily,r1	; r0 = $15, $18 or $1B (index that determines which lillies are flashing)
+
+035D : E2		comz	r2				; if r0 = status_B_lillies  or status_A_lillies
+035E : 1C 04 97		bcta,eq	frog_mishap_2			; then goto frog_mishap_2
+0361 : 1F 06 94		bcta,un	test_frog_position		; else EXIT to test_frog_position
+		;	-----------------
+
+0364		set_A_lily_variables:			; from 0347 (frog is at $3c vertical,(A_lillies))
+0364 : 0E 1F 89		loda,r2	status_A_lillies
+0367 : 0F 1F 8A		loda,r3	counter_flash_A_lillies	;  r2,r3 = variables for flashing A lillies
+036A : 1B 68		bctr,un	branch0354
+		;	=============
+
+
+
+036C		frog_in_road:			; from 06B1 when frogVC > 8E (in road)
+036C : 0E 1F 0E		loda,r2	copy_interobject
+036F : 46 38		andi,r2	H'38'			; if frog not collided with any other object,
+0371 : 1C 06 B9		bcta,eq	start_screen_output	; then goto start_screen_output
+0374 : 1F 04 97		bcta,un	frog_mishap_2		; else goto frog_mishap_2
+		;	=============
+
+
+0377		EndOfRun:			; from 02cf with r2=timer_Q != 0
+						; this runs when frog reaches home, or looses a life
+0377 : A6 01		subi,r2	H'01'
+0379 : CE 1F 4F		stra,r2	timer_Q			; decrement timer_Q
+037C : 5E 06 B9		brna,r2	start_screen_output	; if timer_Q != 0, EXIT to start_screen_output
+
+037F : 0D 1F AC		loda,r1	control_bits		; else (timer_Q has finished, ending the delay after reaching a hole or loosing a life)
+0382 : F5 04		tmi,r1	H'04'				; if bit 2 of control_bits == 0,
+0384 : 98 08		bcfr,eq	branch038E			; then	EXIT to branch038E
+0386 : 45 41		andi,r1	H'41'				; else
+0388 : CD 1F AC		stra,r1	control_bits				; clear bits 754321 of control_bits
+038B : 1F 04 5A		bcta,un	SELECT					; EXIT to SELECT routine
+		;	--------------
+
+038E		branch038E:			; from 0384		
+038E : 05 FF		lodi,r1	H'FF'				
+0390 : CD 17 C8		stra,r1	score12				; set scores to blanks
+0393 : CD 17 C9		stra,r1	score34				; note: $17C8/9 is simply a mirror of $1FC8/9; obfuscation
+		
+0396 : 0D 1F A3		loda,r1	control_bits_2
+0399 : F5 04		tmi,r1	H'04'				; if bit 2 of control_bits_2 == 1
+039B : 1C 03 F0		bcta,eq	player_loses_a_life		; then goto player_loses_a_life
+
+039E : F5 02		tmi,r1	H'02'				; if bit 1 of control_bits_2 == 1
+03A0 : 1C 04 68		bcta,eq	prepare_for_new_run		; then goto prepare_for_new_run
+
+03A3 : 45 DF		andi,r1	H'DF'
+03A5 : CD 1F A3		stra,r1	control_bits_2			; clear bit 5 of control_bits_2 (turn off sound fx)
+
+03A8		start_fresh_run:			; start a fresh run - also from 046a, 465
+03A8 : 06 00		lodi,r2	H'00'
+03AA : CE 1F 9A		stra,r2	joystick_udlr			; joystick_udlr = 0
+03AD : CE 1F 9B		stra,r2	frog_animation			; frog_animation = 0
+03B0 : CE 1F 99		stra,r2	frog_on_lily_log		; frog_on_lily_log = 0
+
+03B3 : 0E 1F 9C		loda,r2	hole_control
+03B6 : 46 07		andi,r2	H'07'				; ***** why 7 when only 4 bytes of data? *****
+								; **because initialised to 4, now going to be predecremented**
+03B8 : 0E 4F BC		loda,r0	LUT_time_allowed,r2,-		; 0{f8,fc,fe,ff}3
+03BB : CC 1F 1E		stra,r0	stopwatch			; stopwatch = f8,fc,fe,ff
+
+03BE : 0E 1F A1		loda,r2	timer_P_reset_value
+03C1 : CE 1F 4E		stra,r2	timer_P				; timer_P = timer_P_reset_value
+
+03C4 : 06 FC		lodi,r2	H'FC'
+03C6 : CE 1F 0C		stra,r2	object1VC			; frog at bottom ready to start again
+
+
+03C9 : 06 0A		lodi,r2	H'0A'
+03CB		loop03CB:
+03CB : 0E 4F 20		loda,r0	short_frog,r2,-
+03CE : CE 7F 00		stra,r0	object1SHAPE,r2			; display short frog
+03D1 : 5A 78		brnr,r2	loop03CB
+
+
+03D3 : 0E 1F 0A		loda,r2	object1HC			; FORCE FROG TO BE ONSCREEN, HORIZONTALLY
+03D6 : E6 1C		comi,r2	H'1C'
+03D8 : 19 02		bctr,gt	endif03DC			; if HC of frog <= $1C (28) 
+03DA : 06 1C		lodi,r2	H'1C'				; then HC of frog = $1C
+03DC		endif03DC:					; endif
+03DC : E6 9E		comi,r2	H'9E'
+03DE : 1A 02		bctr,lt	endif03E2			; if HC of frog >= $9e (158) then goto branch03e2
+03E0 : 06 9E		lodi,r2	H'9E'				; then HC of frog = $9E
+03E2		endif03E2:					; endif
+
+03E2 : CE 1F 0A		stra,r2	object1HC			; set frog HC
+
+03E5 : 0D 1F A3		loda,r1	control_bits_2
+03E8 : 45 E9		andi,r1	H'E9'
+03EA : CD 1F A3		stra,r1	control_bits_2			; clear bits 421 of control_bits_2
+
+03ED : 1F 06 B9		bcta,un	start_screen_output
+		;	=============
+
+						;***************** A PLAYER LOSES A LIFE ***************
+
+03F0		player_loses_a_life:		; from 039b with r1 = control_bits_2
+03F0 : 0F 1F 1F		loda,r3	lifes_left		; r3= lifes_left
+03F3 : 01		lodz	r1
+03F4 : C2		strz	r2			; r2 = control_bits_2
+03F5 : F5 08		tmi,r1	H'08'
+03F7 : 18 28		bctr,eq	player_2_loses_a_life	; if bit 3 of control_bits_2 == 1, goto player_2_loses_a_life
+
+						;******PLAYER 1 LOSES A LIFE*********
+03F9 : A7 10		subi,r3	H'10'
+03FB : CF 1F 1F		stra,r3	lifes_left		; lifes_left = lifes_left - $10
+03FE : 47 70		andi,r3	H'70'
+0400 : 5F 04 60		brna,r3	prepare_for_new_run2	; if bits 456 are not zero goto prepare_for_new_run2 (still alive)
+		
+0403 : 0C 1F A4		loda,r0	score1L		;******* PLAYER 1 DEAD ***********
+0406 : 0D 1F A5		loda,r1	score1H
+0409 : 3F 0E 16		bsta,un	subr_display_score 	; display score for player 1
+040C : F6 80		tmi,r2	H'80'			; if one-player game,
+040E : 98 38		bcfr,eq	game_over		; then goto game_over  
+0410 : 0F 1F 1F		loda,r3	lifes_left		; else
+0413 : 47 07		andi,r3	H'07'			; 	if player 2 also dead goto game_over
+0415 : 18 31		bctr,eq	game_over
+0417		switch_player:
+0417 : 26 08		eori,r2	H'08'			; invert bit 3 of control_bits_2 (other player's turn)
+0419 : CE 1F A3		stra,r2	control_bits_2
+041C : 3F 04 6D		bsta,un	subr_init_4_variables	; gosub subr_init_4_variables
+041F : 1B 3F		bctr,un	prepare_for_new_run2	; goto prepare_for_new_run2
+		;	=============
+
+0421		player_2_loses_a_life:			; from 03f7, with r3= lifes_left
+						; ********PLAYER 2 LOSES A LIFE*********
+0421 : A7 01		subi,r3	H'01'
+0423 : CF 1F 1F		stra,r3	lifes_left		; decrement lifes_left
+0426 : 47 07		andi,r3	H'07'			; clear bits 76543
+0428 : 5B 36		brnr,r3	prepare_for_new_run2	; if bits 210 are not 0, goto prepare_for_new_run2 (still alive)
+042A : 0C 1F A6		loda,r0	score2L
+042D : 0D 1F A7		loda,r1	score2H
+0430 : 3F 0E 16		bsta,un	subr_display_score	; display score 2
+0433 : 3F 0B 8F		bsta,un	sub_level_control   	; (can't explain why this happens here. seems totally wrong)
+0436 : 0F 1F 1F		loda,r3	lifes_left
+0439 : 47 70		andi,r3	H'70'			; isolate player1 lifes left
+043B : 0E 1F A3		loda,r2	control_bits_2
+043E : 5B 57		brnr,r3	switch_player		; if player 1 not dead, go to switch_player
+0440 : 0D 1F A0		loda,r1	level
+0443 : A5 01		subi,r1	H'01'
+0445 : CD 1F A0		stra,r1	level			; decrement level (huh?)
+
+0448		game_over:
+0448 : 0D 1F AC		loda,r1	control_bits
+044B : 45 41		andi,r1	H'41'
+044D : 65 04		iori,r1	H'04'
+044F : CD 1F AC		stra,r1	control_bits		; clear bits 75431, set bit 2  of control_bits	
+
+0452 : 05 FF		lodi,r1	H'FF'
+0454 : CD 1F 4F		stra,r1	timer_Q			; timer_Q = $ff
+0457 : 1F 06 B9		bcta,un	start_screen_output
+		;	=============
+
+045A		SELECT:			;from 0054, 038B, 0B24, 0B31
+045A : 3F 0C 0E		bsta,un	subr_select_start
+045D : 1F 02 78		bcta,un	start_play		; restart
+		;	=============
+
+0460		prepare_for_new_run2:			; from 0400, from 0428 (player 1 or player 2 has lost a life)
+0460 : 07 40		lodi,r3	H'40'	
+0462 : CF 1F 4F		stra,r3	timer_Q	; timer_Q = $40
+0465 : 1F 03 A8		bcta,un	start_fresh_run			; start a fresh run
+		;	=============
+
+0468		prepare_for_new_run: 			;from 03A0
+0468 : 3B 03		bstr,un	subr_init_4_variables		
+046A : 1F 03 A8		bcta,un	start_fresh_run			; start a fresh run
+		;	=============
+
+;		=====================================================
+;		=====================================================
+046D		subr_init_4_variables:		; from 041c 0468
+
+046D : 06 00		lodi,r2	H'00'				; position all frogs in holes offscreen
+046F : CE 1F 50		stra,r2	array_HC_frogs_in_holes
+0472 : CE 1F 51		stra,r2	array_HC_frogs_in_holes+1
+0475 : CE 1F 52		stra,r2	array_HC_frogs_in_holes+2
+
+0478 : 04 04		lodi,r0	H'04'				; 
+047A : CC 1F 9C		stra,r0	hole_control
+047D : 17		retc,un
+;		=====================================================
+;		=====================================================
+
+
+
+047E		end_of_log:			; from 04b0, with r0=log's HC, r1=1, r2=log shape, r3=object1HC
+						; from 04d3, with r0=log's HC, r1=8, r2=log shape, r3=object1HC
+
+047E : E3		comz	r3
+047F : 1D 04 94		bcta,gt	frog_mishap_1		; if   log's HC > object1HC,   goto frog_mishap_1
+
+0482		loop0482:				; FIND HC OF RIGHT END OF LOG
+
+							; LOOP
+0482 : D2		rrl,r2				; 	rotate r2 left (log shape)
+0483 : 46 FE		andi,r2	H'FE'			; 	and clear bit 0 (the 'carry 1' from bit 8)
+0485 : F6 80		tmi,r2	H'80'			; 	when bit 7 is 0, goto branch048d (reached the end of the log)
+0487 : 98 04		bcfr,eq	branch048D		; 	EXIT LOOP  with r0= HC end of log
+0489 : 84 08		addi,r0	H'08'			; 	else r0=r0+8 (move along the log one size x8 'pixel')
+048B : 1B 75		bctr,un	loop0482		; END LOOP
+			=============
+
+048D		branch048D:			;from 487 with r0=HC end of log , r3=object1HC
+048D : E3		comz	r3			; if HC end of log < object1HC
+048E : 1E 04 94		bcta,lt	frog_mishap_1		; then goto frog_mishap_1 (missed right end of log)
+0491 : 1F 05 06		bcta,un	landed_on_lily_or_log	; else goto landed_on_lily_or_log (landed on log)
+		;	=============
+
+
+
+
+0494		frog_mishap_1:			; from 47f, 48e  testing log landing, missed, r1 = 1 or 8
+						; from 4f0,4f,503 testing lily landing, missed, r1 = 2 or 4)
+						; from 69B, test gone offscreen (left,right,bottom), r1 = 0
+0494 : CD 1F 99		stra,r1	frog_on_lily_log
+0497		frog_mishap_2:			; from 02d5, 035e, 0374, 530 (collided in median), 542(object1HC<=$1E), 559(can't explain)
+0497 : 06 20		lodi,r2	H'20'
+0499 : CE 1F 4F		stra,r2	timer_Q	; timer_Q = $20
+049C : 0E 1F A3		loda,r2	control_bits_2
+049F : 66 24		iori,r2	H'24'
+04A1 : CE 1F A3		stra,r2	control_bits_2			; set bits 5 and 2 of control_bits_2
+								; lost life sound fx; lost a life flag
+04A4 : 1F 06 B9		bcta,un	start_screen_output
+		;	=============
+
+
+04A7		frog_in_A_logs:			; from 691, frog VC = $24, A_logs
+						; r3=object1HC,  r1 = 0, 1 or 2 depending on object hit
+
+04A7 : 0D 7F 86		loda,r0	array_shape_A_logs,r1	
+04AA : C2		strz	r2			; save the log's shape in r2
+04AB : 0D 7F 53		loda,r0	array_HC_A_logs,r1	; r0 = that log's horizontal coordinate
+04AE : 05 01		lodi,r1	H'01'			; r1 = 1
+04B0 : 1F 04 7E		bcta,un	end_of_log		; goto end_of_log
+		;	===================
+
+
+04B3		frog_in_A_lillies:		; from 068c, frog VC = $3C, A_lillies
+						; r3=object1HC,  r1 = 0, 1 or 2 depending on object hit
+04B3 : 0E 1F 89		loda,r2	status_A_lillies
+04B6 : E6 03		comi,r2	H'03'
+04B8 : 98 09		bcfr,eq	branch04C3			; if status_A_lillies = 3 
+04BA : 3F 05 0C		bsta,un	subr_flash_lily_decision	; then 	gosub subr_flash_lily_decision
+04BD : CE 1F 89		stra,r2	status_A_lillies		; 	status_A_lillies =  3,$15,$18
+04C0 : CC 1F 8A		stra,r0	counter_flash_A_lillies		; 	counter_flash_A_lillies = 0	$64
+04C3		branch04C3:					; endif
+
+04C3 : 0D 7F 56		loda,r0	array_HC_A_lillies,r1		; r0 = array_ HC_A_lillies,r1
+04C6 : 05 04		lodi,r1	H'04'				; r1 = 4
+04C8 : 1B 23		bctr,un	lily_accuracy
+		;	===================
+
+
+04CA		frog_in_B_logs:			; from 0687, frog VC = $54, B_logs
+						;  r3=object1HC,  r1 = 0, 1 or 2 depending on object hit
+						; same as frog_in_A_logs but other set of logs
+04CA : 0D 7F 8C		loda,r0	array_shape_B_logs,r1
+04CD : C2		strz	r2 
+04CE : 0D 7F 59		loda,r0	array_HC_B_logs,r1
+04D1 : 05 08		lodi,r1	H'08'
+04D3 : 1F 04 7E		bcta,un	end_of_log			; goto end_of_log
+		;	==================
+
+
+04D6		frog_in_B_lillies:		; from 0681, frog VC = $6C, B_lillies
+						; r3=object1HC,  r1 = 0, 1 or 2 depending on object hit
+04D6 : 0E 1F 8F		loda,r2	status_B_lillies 		
+04D9 : E6 03		comi,r2	H'03'
+04DB : 98 09		bcfr,eq	branch04E6			; if status_B_lillies  = 3
+04DD : 3F 05 0C		bsta,un	subr_flash_lily_decision	; then  goto subr_flash_lily_decision
+04E0 : CE 1F 8F		stra,r2	status_B_lillies 			;	status_B_lillies  = r2, index for blue lily
+04E3 : CC 1F 90		stra,r0	counter_flash_B_lillies		;	counter_flash_B_lillies = r0, two second timer
+04E6		branch04E6:					; endif
+
+04E6 : 0D 7F 5C		loda,r0	array_HC_B_lillies,r1	; r0 = array_HC_B_lillies,r1
+04E9 : 05 02		lodi,r1	H'02'			; r1 = 2
+04EB : 1B 00		bctr,un	lily_accuracy		; BIZARRE, why the branch?? timing delay???
+							; or maybe there was something else here that got moved?
+
+04ED		lily_accuracy:	
+					; TEST FOR ACCURATE LANDING ON THE LILLIES
+					; from 4c8 r0 = array_ HC_A_lillies[x], r1 = 4,  r3 = frog HC
+					;  and 4eb r0 = array_HC_B_lillies[x], r1 = 2,  r3 = frog HC
+					
+04ED : A4 03		subi,r0	H'03'	  
+04EF : E3		comz	r3
+04F0 : 1D 04 94		bcta,gt	frog_mishap_1		; if frog HC <= (lilyHC-3), goto frog_mishap_1 (landed left of lillies)
+04F3 : 84 0E		addi,r0	H'0E'			;   else 
+04F5 : E3		comz	r3
+04F6 : 1E 04 94		bcta,lt	frog_mishap_1		;     if frog HC >= (lilyHC+11), goto frog_mishap_1 (landed right of lillies)
+04F9 : A4 05		subi,r0	H'05'			;	else 
+04FB : E3		comz	r3
+04FC : 1A 08		bctr,lt	landed_on_lily_or_log	;	   if frog HC >= (lilyHC+6), goto landed_on_lily_or_log (landed on right-hand lilly)
+04FE : A4 04		subi,r0	H'04'			;	      else
+0500 : E3		comz	r3
+0501 : 19 03		bctr,gt	landed_on_lily_or_log	;	   	if frog HC <= (lilyHC+2), goto landed_on_lily_or_log  (landed on left-hand lilly)
+0503 : 1F 04 94		bcta,un	frog_mishap_1		;		else goto frog_mishap_1  (landed between the lillies)
+		;	==============
+
+
+0506		landed_on_lily_or_log:		; from 491 (landed on log)  r1 = 1 or 8
+						; from 4fc, 501 (landed on lily)  r1 = 2 or 4
+
+0506 : CD 1F 99		stra,r1	frog_on_lily_log	; frog_on_lily_log = r1
+0509 : 1F 06 B9		bcta,un	start_screen_output
+
+
+
+;		=====================================================
+;		=====================================================
+050C		subr_flash_lily_decision:
+					; from 043A (frog_in_A_lillies) when status_A_lillies = 3
+					; from 04DD (frog_in_B_lillies) when status_B_lillies  = 3 
+						;with r3=object1HC,  r1 = 0, 1 or 2 depending on object hit
+
+					; returns new values in r0 (probably a 2s timer), r2 (index to colours):
+						; frog_in_A_lillies:  counter_flash_A_lillies=r0, status_A_lillies=r2
+						; frog_in_B_lillies:  counter_flash_B_lillies=r0, status_B_lillies =r2
+050C : 03		lodz	r3
+050D : 44 0F		andi,r0	H'0F'
+050F : 0E 1F A0		loda,r2	level
+0512 : E2		comz	r2			; if  (r3 & $0F) < level,  goto branch0519
+0513 : 1A 04		bctr,lt	branch0519
+0515 : 20		eorz	r0			; else
+0516 : 06 03		lodi,r2	H'03'
+0518 : 17		retc,un				; EXIT with r0=0, r2=3 (all white lillies)
+
+0519		branch0519:
+0519 : 0D 65 20		loda,r0	LUT_index_blue_lily,r1	; select appropriate index for object hit
+051C : C2		strz	r2
+051D : 04 64		lodi,r0	H'64'
+051F : 17		retc,un				; EXIT with r0=$64 (100), r2=either $15, $18, $1B (one blue lily)
+
+;		=====================================================
+;		=====================================================
+
+0520		LUT_index_blue_lily:
+					; indexed from 35a, with index  0,1,2
+					; indexed from 519 (subr_flash_lily_decision), with index 
+					; indexed from 77a, with index 
+					; indexed from 797, with index 	
+				; used as index values to LUT_colour_size (0EA6) by subr_obj_size_colour (0D90)
+											
+0520 : 15		db	H'15'	; flashes lily in object 2 blue	
+0521 : 18		db	H'18'	; flashes lily in object 3 blue		
+0522 : 1B		db	H'1B'	; flashes lily in object 4 blue			
+			=============
+
+
+0523		frog_in_median:		;from 6B6 when  $7A < frog VC < $8E  (median)
+						;tests for a mishap: landing on snake's head or body, but not the tail {confirm with emulator}
+							
+0523 : 0C 1F 0E		loda,r0 copy_interobject
+0526 : 44 38		andi,r0	H'38'				;{this seems over-complicated}
+0528 : 1C 06 B9		bcta,eq	start_screen_output	; if frog has not collided goto start_screen_output
+052B : 44 08		andi,r0	H'08'      
+052D : 9C 06 B9		bcfa,eq	start_screen_output     ; if frog has collided with object4 goto start_screen_output
+0530 : 1F 04 97		bcta,un	frog_mishap_2		; else goto frog_mishap_2 (collided with 2 or 3)
+			=============
+
+0533		frog_reached_bank:				; from 0641, frog has reached the bank, VC==$15
+0533 : 20		eorz	r0
+0534 : CC 1F 9A		stra,r0	joystick_udlr		; joystick_udlr = 0
+0537 : CC 1F 99		stra,r0	frog_on_lily_log	; frog_on_lily_log = 0
+
+						; FROG HAS REACHED THE BANK. NOW TEST TO SEE IF IT HAS LANDED ACCURATELY ENOUGH
+						; IN A HOLE, AND DETERMINE WHICH HOLE IT IS.
+
+053A : 0E 1F 0A		loda,r2	object1HC		; r2 = object1HC
+053D : 07 80		lodi,r3	H'80'			; r3 = $80 (will be used as bitwise indicator of which hole)
+053F : 04 1E		lodi,r0	H'1E'			; r0 = $1E (test coordinate, one pixel left of the left-most hole)
+
+0541		loop0541:				; REPEAT
+0541 : E2		comz	r2				
+0542 : 1D 04 97		bcta,gt	frog_mishap_2			; if object1HC <= test coordinate   EXIT TO  frog_mishap_2
+								;	(landed left of the hole)
+0545 : 84 02		addi,r0	H'02'
+0547 : E2		comz	r2				; move test coordinate two pixels right
+
+0548 : 9A 0A		bcfr,lt	branch0554			; if object1HC < test coordinate,   EXIT TO safely_home
+
+054A : 53		rrr,r3					; r3 = r3>    shift the bitwise indicator right, to indicate the next hole
+
+054B : 84 26		addi,r0	H'26'				; test coordinate = test coordinate + $26  (move to one pixel left of the next hole)
+		
+054D : E4 A0		comi,r0	H'A0'				; 
+054F : 1D 04 97		bcta,gt	frog_mishap_2			; if test coordinate > $A0   EXIT TO  frog_mishap_2
+								; 	(landed right of the right-most hole)
+0552 : 1B 6D		bctr,un	loop0541		; END REPEAT
+			================
+
+
+0554		safely_home:   		 ;from 548
+						; arrives here when a frog lands in a hole in the bank, 
+						; with r2 = object1HC and  
+						; r3= $80, $40, $20, $10 to indicate which hole, left to right.
+0554 : 0C 1F 9C		loda,r0	hole_control
+0557 : C1		strz	r1				; r1 = hole_control
+0558 : 43		andz	r3				; r0 = r3 & hole_control
+0559 : 5C 04 97		brna,r0	frog_mishap_2			; if r0 != 0  goto frog_mishap_2 (frog landed in same hole twice)
+055C : 01		lodz	r1				; else 
+055D : 63		iorz	r3				;  	r0 = r3 | hole_control 	(set bit for new landing)
+055E : A4 01		subi,r0	H'01'				;   	r0 = r0 - 1		(decrement the counter)
+0560 : C8 F3		strr,r0	*X0555 @hole_control@		;   	hole_control = r0  
+0562 : 44 07		andi,r0	H'07'				;   	r0 = r0 & $07  		(isolate the counter)
+0564 : C1		strz	r1				;   	r1 = r0		
+0565 : 1C 05 EB		bcta,eq	bonus_life_and_score		;   	if r0 = 0  (all holes filled), goto bonus_life_and_score
+0568 : 02		lodz	r2	
+0569 : CD 7F 4F		stra,r0	timer_Q,r1   ;    	else array_HC_frogs_in_holes[r1-1] = object1HC
+				; NOTE: array_HC_frogs_in_holes is one byte past timer_Q
+
+056C : 05 0A		lodi,r1	H'0A'
+056E		loop056E:
+056E : 0D 4F 20		loda,r0	short_frog,r1,-
+0571 : CD 7F 00		stra,r0	object1SHAPE,r1			;  output short frog shape
+0574 : 59 78		brnr,r1	loop056E
+
+0576 : 04 FC		lodi,r0	H'FC'
+0578 : CC 1F 0C		stra,r0	object1VC			;  set frog VC to $FC (start position)
+
+057B : 47 F0		andi,r3	H'F0'				;  r3 = r3 & $F0 (probably not necessary)
+057D : 53		rrr,r3					;  r3 = r3/2
+								
+057E : 0D 1F A3		loda,r1	control_bits_2
+0581 : 65 50		iori,r1	H'50'
+0583 : CD 1F A3		stra,r1	control_bits_2			;  set bits 6,4 of control_bits_2
+
+0586		score_for_hole:		; from 0583, 				with r3= $40, $20, $10, $08 
+					;   or 0610 (bonus_life_and_score), 	with r3= $90, $70, $60, $58
+
+0586 : 3F 0D D3		bsta,un	subr_increase_score		;  add r3 to score
+
+
+		score_for_speed:
+0589 : 07 00		lodi,r3	H'00'				;  r3 = 0
+058B : 0E 1F 4E		loda,r2	timer_P	;  
+058E : E6 32		comi,r2	H'32'
+0590 : 1A 0E		bctr,lt	branch05A0			;  if timer_P >= $32  (50)
+								;	then
+0592 : 87 01		addi,r3	H'01'				;	r3++
+0594 : E6 64		comi,r2	H'64'				
+0596 : 1A 08		bctr,lt	branch05A0			;	if timer_P >= $64  (100)
+								;		then 
+0598 : 87 01		addi,r3	H'01'				;		r3++
+059A : E6 96		comi,r2	H'96'
+059C : 1A 02		bctr,lt	L05A0				;		if timer_P >= $96 (150)
+								;			then 
+059E : 87 01		addi,r3	H'01'				;			r3++
+
+05A0		branch05A0:					;  endif
+
+05A0 : 0E 1F 1E		loda,r2	stopwatch				;  r2 = stopwatch
+										;add something else to score, based on hole position
+05A3		loop05A3:					;  WHILE
+05A3 : D2		rrl,r2					;  	( r2<<
+05A4 : 46 FE		andi,r2	H'FE'				;  	  clear bit0
+05A6 : F6 80		tmi,r2	H'80'				;         bit7 != 1   )
+05A8 : 9C 05 B2		bcfa,eq	branch05B2			;  
+								;  	DO 
+05AB : 87 66		addi,r3	H'66'				;  	r3 = r3 + $66
+05AD : 87 04		addi,r3	H'04'				;	r3 = r3 + 4
+05AF : 97		dar,r3					;       digital adjust r3 (in BCD, r3=r3+4)
+05B0 : 1B 71		bctr,un	loop05A3			
+05B2		branch05B2:					;  ENDWHILE
+
+05B2 : 3F 0D D3		bsta,un	subr_increase_score		;  add r3 to score
+05B5 : 3F 0E 16		bsta,un	subr_display_score		;  display the score
+
+05B8 : 0C 1F A3		loda,r0	control_bits_2	
+05BB : F4 02		tmi,r0	H'02'				;  if control_bits_2, bit 1 == 0 goto set_50_frame_delay
+05BD : 98 24		bcfr,eq	set_50_frame_delay
+05BF : F4 80		tmi,r0	H'80'				;  if control_bits_2, bit 7 == 0 goto set_next_level
+05C1 : 98 0B		bcfr,eq	set_next_level
+05C3 : 0E 1F 1F		loda,r2	lifes_left
+05C6 : F4 08		tmi,r0	H'08'				;  if control_bits_2, bit 3 == 1 goto two_up
+05C8 : 18 09		bctr,eq	two_up
+05CA : 46 07		andi,r2	H'07'				;  
+05CC : 98 0F		bcfr,eq	switch_player			;  if bits 210 of lifes_left != 0 (player 1 still alive) goto switch_player`````
+05CE		set_next_level:				; from 5BD, 5C1....
+05CE : 3F 0B 8F		bsta,un	sub_level_control		;  gosub sub_level_control (next level)
+05D1 : 1B 10		bctr,un	set_50_frame_delay		;  goto set_50_frame_delay
+		;       ------------------
+05D3		two_up:				; from 5BD, 5C8
+05D3 : 3F 0B 8F		bsta,un	sub_level_control		;  gosub sub_level_control (next level)
+05D6 : 46 70		andi,r2	H'70'
+05D8 : 18 09		bctr,eq	set_50_frame_delay		;  if bits 654 of lifes_left == 0 (player 1 dead), goto set_50_frame_delay
+05DA : 0C 1F A3		loda,r0	control_bits_2			;  r0 = control_bits_2
+05DD		switch_player:
+05DD : 2C 0B 35		eora,r0	unknown	 # $08 #		;  r0 = r0 ^  $08
+05E0 : CC 1F A3		stra,r0	control_bits_2			;  control_bits_2 = r0
+
+05E3		set_50_frame_delay:				;from 5BD, 5D1, 5D8
+05E3 : 07 50		lodi,r3	H'50'				
+05E5 : CF 1F 4F		stra,r3	timer_Q				;  timer_Q = $50
+05E8 : 1F 06 B9		bcta,un	start_screen_output		;  goto start_screen_output  (start display scan)
+		;	===========================
+
+
+05EB		bonus_life_and_score:		; from 565 frog landed in hole in bank
+						; with r3= $80, $40, $20, $10 to indicate which hole, left to right.
+05EB : 0D 1F A3		loda,r1	control_bits_2	
+05EE : 65 52		iori,r1	H'52'
+05F0 : CD 1F A3		stra,r1	control_bits_2			;  set bits 641 of control_bits_2
+								;  (landed in hole?, sound fx home, start new run)
+05F3 : 0E 1F 1F		loda,r2	lifes_left
+05F6 : F5 08		tmi,r1	H'08'				;  if player 2,  goto bonus_player_2
+05F8 : 18 08		bctr,eq	bonus_player_2
+								;  (player 1)
+05FA : F6 40		tmi,r2	H'40'				;  if bit 6 of lifes_left == 1,
+05FC : 18 0D		bctr,eq	branch060B			;  then goto branch060B (already has 4 lives)
+05FE : 86 10		addi,r2	H'10'				;  else give player 1 an extra life
+0600 : 1B 06		bctr,un	branch0608			;  goto branch 0608
+		;
+0602		bonus_player_2:					;  (player 2)
+0602 : F6 04		tmi,r2	H'04'				;  if bit 2 of lifes_left == 1,
+0604 : 18 05		bctr,eq	L060B				;  then goto branch060B (already has 4 lives)
+0606 : 86 01		addi,r2	H'01'				;  else give player 2 an extra life
+0608		branch0608:
+0608 : CE 1F 1F		stra,r2	lifes_left
+060B		branch060B:					
+060B : 47 F0		andi,r3	H'F0'				
+060D : 53		rrr,r3
+060E : 87 50		addi,r3	H'50'			; exit with r3 adjusted to r3= $90, $70, $60, $58
+0610 : 1F 05 86		bcta,un	score_for_hole
+		;	=====================
+
+
+0613		branch0613:		; from 066C,  frog_animation != $07
+						; loads long frog when frog_animation=$D, short frog when=$8
+						; (only needs to change it on these two frames)
+0613 : 0F 1F 9B		loda,r3	frog_animation		
+0616 : 05 0A		lodi,r1	H'0A'
+0618 : E7 0D		comi,r3	H'0D'
+061A : 18 10		bctr,eq	load_long_frog		; if frog_animation == $0D goto load_long_frog
+061C : E7 08		comi,r3	H'08'
+061E : 9C 06 94		bcfa,eq	test_frog_position	; if frog_animation != $08 goto test_frog_position
+
+0621		load_short_frog:
+0621 : 0D 4F 20		loda,r0	short_frog,r1,-
+0624 : CD 7F 00		stra,r0	object1SHAPE,r1		; load short frog shape
+0627 : 59 78		brnr,r1	load_short_frog
+0629 : 1F 06 94		bcta,un	test_frog_position	; goto test_frog_position
+		;
+062C		load_long_frog:
+062C : 0D 4F 2E		loda,r0	long_frog,r1,-
+062F : CD 7F 00		stra,r0	object1SHAPE,r1		; load long frog shape
+0632 : 59 78		brnr,r1	load_long_frog
+0634 : 1F 06 94		bcta,un	test_frog_position	; goto test_frog_position
+		;	=============
+
+0637		move_frog_up:			; from 02dd
+0637 : 0D 1F 0C		loda,r1	object1VC
+063A : A5 03		subi,r1	H'03'
+063C : CD 1F 0C		stra,r1	object1VC		; move frog up 3
+063F : E5 15		comi,r1	H'15'
+0641 : 1C 05 33		bcta,eq	frog_reached_bank	; if frog is home, goto frog_reached_bank
+0644 : 1B 1C		bctr,un	frog_moved
+		;	==============
+0646		move_frog_down:			; from 02e2, 320
+0646 : 0D 1F 0C		loda,r1	object1VC
+0649 : 85 03		addi,r1	H'03'
+064B : CD 1F 0C		stra,r1	object1VC		; move frog down 3
+064E : 1B 12		bctr,un	frog_moved
+		;	===============
+0650		move_frog_right:		; from 02ec, 313
+0650 : 0D 1F 0A		loda,r1	object1HC
+0653 : 85 01		addi,r1	H'01'
+0655 : CD 1F 0A		stra,r1	object1HC		; move frog right 1
+0658 : 1B 08		bctr,un	frog_moved
+		;	===============
+065A		move_frog_left:			; from 02e7
+065A : 0D 1F 0A		loda,r1	object1HC
+065D : A5 01		subi,r1	H'01'
+065F : CD 1F 0A		stra,r1	object1HC		; move frog left 1
+
+0662		frog_moved:
+0662 : 0E 1F 9B		loda,r2	frog_animation			
+0665 : A6 01		subi,r2	H'01'
+0667 : CE 1F 9B		stra,r2	frog_animation		; frog_animation--
+
+066A : E6 07		comi,r2	H'07'
+066C : 9C 06 13		bcfa,eq	branch0613		; if frog_animation != $07 goto branch0613
+066F : 20		eorz	r0
+0670 : CC 1F 99		stra,r0	frog_on_lily_log	; frog_on_lily_log = 0
+0673 : CC 1F 9A		stra,r0	joystick_udlr		; joystick_udlr = 0
+0676 : 0E 1F 0C		loda,r2	object1VC
+0679 : 0F 1F 0A		loda,r3	object1HC
+067C : 3F 0B FE		bsta,un	subr_test_interobject	; returns with r1 = 0, 1 or 2 depending on object hit.
+								; NOTE: there is no option for no collision, it returns r1=2 by default.
+								; In the road area, it doesn't matter which object it collides with, and 
+								; collision status is checked again in frog_in_road.
+							; (DOES NOT USE R2 OR R3 AS ARGUMENTS)
+
+						;-----------------------------------------
+						; DECIDE ACTION ACCORDING TO FROG POSITION
+
+067F : E6 6C		comi,r2	H'6C'			; if frog VC = $6C (B_lillies) goto frog_in_B_lillies
+0681 : 1C 04 D6		bcta,eq	frog_in_B_lillies
+0684 : EE 0F E3		coma,r2	T_hex54			; if frog VC = $54 (B_logs) goto frog_in_B_logs
+							;   (this absolute load is used as a trap for anyone messing with the 
+							;	shape of the Voltmace trucks)
+0687 : 1C 04 CA		bcta,eq	frog_in_B_logs
+068A : E6 3C		comi,r2	H'3C'			; if frog VC = $3C (A_lillies) goto frog_in_A_lillies
+068C : 1C 04 B3		bcta,eq	frog_in_A_lillies
+068F : E6 24		comi,r2	H'24'			; if frog VC = $24 (A_logs) goto frog_in_A_logs
+0691 : 1C 04 A7		bcta,eq	frog_in_A_logs
+
+0694		test_frog_position:		;from 034b, 0361, 0354, 061E
+0694 : 05 00		lodi,r1	H'00'			; r0 = 0
+0696 : 0F 1F 0A		loda,r3	object1HC		
+0699 : E7 B6		comi,r3	H'B6'			; if frog HC > $B6, (offscreen, right) goto frog_mishap_1
+069B : 1D 04 94		bcta,gt	frog_mishap_1
+069E : E7 02		comi,r3	H'02'			; if frog HC < 2, (offscreen, left) goto frog_mishap_1
+06A0 : 1E 04 94		bcta,lt	frog_mishap_1
+06A3 : 0E 1F 0C		loda,r2	object1VC
+06A6 : E6 FE		comi,r2	H'FE'
+06A8 : 1D 04 94		bcta,gt	frog_mishap_1		; if frog VC > $FE, (offscreen bottom) goto frog_mishap_1
+06AB : E6 F5		comi,r2	H'F5'
+06AD : 19 0A		bctr,gt	start_screen_output	; if frog VC > $F5, (start position) goto start_screen_output
+06AF : E6 8E		comi,r2	H'8E'
+06B1 : 1D 03 6C		bcta,gt	frog_in_road		; if frog VC > $8E, (road) goto frog_in_road
+06B4 : E6 7A		comi,r2	H'7A'
+06B6 : 1D 05 23		bcta,gt	frog_in_median		; if frog VC > $7A, (median) goto frog_in_median
+						;-----------------------------------------
+
+
+						; ***********HUGE COLLECTOR POINT*****************
+						; *********START THE DISPLAY SCAN********************
+
+
+06B9		start_screen_output:		; from 0371,037c,03ed,457,4a4,509,5e8,6ad,6b6
+						; from 52D if frog collided with object4 ???
+
+06B9 : 07 03		lodi,r3	H'03'
+06BB		loop06BB:
+06BB : 0F 4E C1		loda,r0	frog_in_hole,r3,-	; FROGs IN A HOLE
+06BE : CF 7F 13		stra,r0	object2SHAPE_line4,r3	; load lines 456 of objects 234 with top three lines of frog shape
+06C1 : CF 7F 23		stra,r0	object3SHAPE_line4,r3	
+06C4 : CF 7F 43		stra,r0	object4SHAPE_line4,r3
+06C7 : 5B 72		brnr,r3	loop06BB
+
+
+06C9 : 07 04		lodi,r3	H'04'
+06CB : CF 1F 1D		stra,r3	object2VCB		; duplicate offsets objects 234 = 4
+06CE : CF 1F 2D		stra,r3	object3VCB
+06D1 : CF 1F 4D		stra,r3	object4VCB
+
+06D4 : 07 1A		lodi,r3	H'1A'
+06D6 : CF 1F C6		stra,r3	backgroundcolours	; blue grid, enabled. green screen (THE BANK AND FROG HOLES)
+
+06D9 : 06 06		lodi,r2	H'06'
+06DB : 3F 0D 90		bsta,un	subr_obj_size_colour	; all objects are size %00 and green. 
+									
+
+06DE : 0F 1F 50		loda,r3	array_HC_frogs_in_holes 	;set the HC of the frogs in holes
+06E1 : CF 1F 1A		stra,r3	object2HC
+06E4 : 0F 1F 51		loda,r3	array_HC_frogs_in_holes+1       
+06E7 : CF 1F 2A		stra,r3	object3HC
+06EA : 0F 1F 52		loda,r3	array_HC_frogs_in_holes+2
+06ED : CF 1F 4A		stra,r3	object4HC
+
+06F0 : 0F 1F A3		loda,r3	control_bits_2
+06F3 : F7 40		tmi,r3	H'40'				; if "Just landed in hole" flag == 0
+06F5 : 18 18		bctr,eq	else070F	
+
+06F7 : 0F 1F A2		loda,r3	speed_control_counter		; then 
+06FA : FB 02		bdrr,r3	endif06FE				; speed_control_counter --
+									; if speed_control_counter == 0
+06FC : 07 10		lodi,r3	H'10'					; then 	speed_control_counter = $10
+06FE		endif06FE:						; endif
+
+06FE : CF 1F A2		stra,r3	speed_control_counter
+0701 : 0F 4E C8		loda,r0	LUT_speed_control,r3,-			
+0704 : C3		strz	r3					; r3 = LUT_speed_control[speed_control_counter-]
+
+0705 : 0C 1F 92		loda,r0	J_group_control	
+0708 : 43		andz	r3 					; if J_group_control && LUT_speed_control[speed_control_counter-] == 0
+0709 : 1C 07 AB		bcta,eq	move_K_group				; then goto 07AB
+070C : 1F 07 2F		bcta,un	move_floating_frog			; else goto move_floating_frog
+		;	--------------				
+070F		else070F:			; from 6F5
+070F : 47 BF		andi,r3	H'BF'				; else 	
+0711 : CF 1F A3		stra,r3	control_bits_2				; "Just landed in hole" flag = 0
+0714 : 1F 08 31		bcta,un	nothing_else_to_move			; goto nothing_else_to_move
+		;	=============	
+
+
+0717		log_entering_left:			; from 074B, when logHC == 7 ; r2=index to log 1,2,3
+									; logs entering from left have to be expanded from nothing as they 
+									; move onto the screen
+0717 : 0E 7F 86		loda,r0	array_shape_A_logs,r2  
+071A : EC 1F 9F		coma,r0	log_shape			; if array_shape_A_logs[N] >= log_shape  
+071D : 9A 0C		bcfr,lt	branch072B			; then goto branch072B
+								; else
+071F : 50		rrr,r0						; shift log shape right
+0720		branch0720:			; from 0729
+0720 : 64 80		iori,r0	H'80'					; set bit 7 of log shape 
+0722 : CE 7F 86		stra,r0	array_shape_A_logs,r2
+0725 : 20		eorz	r0					; r0 = 0
+0726 : 1B 2D		bctr,un	branch0755				; goto 	branch0755
+		;	==================
+0728		start_log_from_left:			; from 0751, logHC >= max_HC_river	
+0728 : 20		eorz	r0				; r0 = 0  (start new log shape from 0)
+0729 : 1B 75		bctr,un	branch0720			; goto branch0720
+		;	==================
+072B		branch072B:			; from 071D
+072B : 04 08		lodi,r0	H'08'				; r0 = 8
+072D : 1B 26		bctr,un	branch0755			; goto 	branch0755 
+		;	==================
+
+
+072F		move_floating_frog:			; from 070C
+						; DECIDE IF FROG NEEDS TO MOVE HORIZONTALLY; THEN LEFT OR RIGHT
+072F : 0D 1F 99		loda,r1	frog_on_lily_log		
+0732 : 45 07		andi,r1	H'07'			; Why not bit3 ??? see $07b2 maybe?
+0734 : 18 0E		bctr,eq	branch0744		; if bits210 of frog_on_lily_log != 0
+0736 : 0E 1F 0A		loda,r2	object1HC		; then
+0739 : F5 04		tmi,r1	H'04'				; if bit2 of frog_on_lily_log != 1 
+073B : 18 02		bctr,eq	endif073F
+073D : 86 02		addi,r2	H'02'				; then 	object1HC = object1HC + 2
+073F		endif073F:					; endif
+073F : A6 01		subi,r2	H'01'
+0741 : CE 1F 0A		stra,r2	object1HC			; object1HC = object1HC - 1
+										
+							; in short:  (if bit 2 == 1 move frog left, 
+							;  else bit 0 or 1 must  == 1 so move frog right)
+
+0744		branch0744:				; endif
+
+
+
+
+0744 : 06 03		lodi,r2	H'03'			; r2 is index register [N] used throughout the following section:
+
+							; FOR N = 2 TO 0 
+								; CALCULATE HORIZONTAL POSITIONS OF J_group:
+								;	A_logs, B_trucks, A_lillies, B lillies
+
+0746		loop0746:			;from 07A8
+0746 : 0E 5F 53		loda,r0	array_HC_A_logs,r2,-		; r2--,   r0 = array_ HC_A_logs[N]
+0749 : E4 07		comi,r0	H'07'			
+074B : 1C 07 17		bcta,eq	log_entering_left		; if logHC == 7, goto log_entering_left
+074E : EC 1F 9D		coma,r0	max_HC_river
+0751 : 9A 55		bcfr,lt	start_log_from_left		; if logHC >= max_HC_river, goto start_log_from_left
+0753 : 84 01		addi,r0	H'01'				; logHC ++  move right
+
+0755		branch0755:			; from 0726, r0=0, and r2=index to log 1,2,3
+								; from 072D, r0=8, and r2=index to log 1,2,3
+0755 : CE 7F 53		stra,r0	array_HC_A_logs ,r2
+
+0758 : 0E 7F 6B		loda,r0	array_HC_B_trucks,r2		; r0 = array_HC_B_trucks[N]
+075B : A4 01		subi,r0	H'01'				; r0 --   move left
+075D : 98 11		bcfr,eq	branch0770			; if r0 != 0 goto branch0770
+
+075F : 0E 7F 96		loda,r0	array_pointer_B_trucks,r2 	; r0 = indexed value from array_pointer_B_trucks[r2]
+0762 : 84 18		addi,r0	H'18'				; r0 = r0 + $18		(skip 3 trucks)
+0764 : E4 49		comi,r0	H'49'
+0766 : 1A 02		bctr,lt	branch076A			; if r0 >= $49		(end of table)
+0768 : A4 50		subi,r0	H'50'				;   then r0 = r0 - $50  (back to start of table)
+076A		branch076A:
+076A : CE 7F 96		stra,r0	array_pointer_B_trucks,r2 	; indexed value from array: array_pointer_B_trucks = r0
+
+076D : 0C 1F 9E		loda,r0	max_HC_road			; get value for truck entering from right
+0770		branch0770:			; from 075D
+0770 : CE 7F 6B		stra,r0	array_HC_B_trucks,r2		; save new value of truck position
+			--------
+
+0773 : 0E 7F 56		loda,r0	array_HC_A_lillies,r2		; r0 = array_HC_A_lillies[N]
+0776 : A4 01		subi,r0	H'01'				; r0 --   move left
+0778 : 98 10		bcfr,eq	branch078A			; if r0 == 0 
+077A : 0E 65 20		loda,r0	LUT_index_blue_lily,r2
+077D : EC 1F 89		coma,r0	status_A_lillies			; then 
+0780 : 98 05		bcfr,eq	branch0787			; 	if LUT_index_blue_lily[r2] == status_A_lillies
+0782 : 04 03		lodi,r0	H'03'
+0784 : CC 1F 89		stra,r0	status_A_lillies			;	then status_A_lillies = 3
+										;       endif
+0787		branch0787:
+0787 : 0C 1F 9D		loda,r0	max_HC_river			;	r0 = max_HC_river
+078A		branch078A:					; endif
+078A : CE 7F 56		stra,r0	array_HC_A_lillies,r2		; save new value of lily position
+			---------
+											
+
+078D : 0E 7F 5C		loda,r0	array_HC_B_lillies,r2		; r0 = array_HC_B_lillies[N]
+0790 : 84 01		addi,r0	H'01'				; r0 ++   move right
+0792 : EC 1F 9D		coma,r0	max_HC_river
+0795 : 1A 0E		bctr,lt	branch07A5			; if array_HC_B_lillies[N] >= max_HC_river
+0797 : 0E 65 20		loda,r0	LUT_index_blue_lily,r2
+079A : EC 1F 8F		coma,r0	status_B_lillies 			; then
+079D : 98 05		bcfr,eq	branch07A4			;	if LUT_index_blue_lily[N] == status_B_lillies 
+079F : 04 03		lodi,r0	H'03'
+07A1 : CC 1F 8F		stra,r0	status_B_lillies 			;	then status_B_lillies  = 3 (set all lillies white)
+07A4		branch07A4:					;	endif
+07A4 : 20		eorz	r0				;	r0 = 0
+07A5		branch07A5:
+07A5 : CE 7F 5C		stra,r0	array_HC_B_lillies,r2		; move lily to left side of screen
+07A8 : 5E 07 46		brna,r2	loop0746			
+							;  END FOR R2 = 2 TO 0 
+
+
+
+
+
+07AB		move_K_group:			;from 0709 with r3 = LUT_speed_control[speed_control_counter-]
+07AB : 0C 1F 93		loda,r0	K_group_control
+07AE : 43		andz	r3
+07AF : 1C 08 03		bcta,eq	move_B_cars		; if K_group_control && LUT_speed_control[speed_control_counter-]  != 0
+07B2 : 0E 1F 99		loda,r2	frog_on_lily_log	; then
+07B5 : F6 08		tmi,r2	H'08'
+07B7 : 98 08		bcfr,eq	if07C1				; if frog_on_lily_log bit 3 == 1
+
+07B9 : 0E 1F 0A		loda,r2	object1HC
+07BC : A6 01		subi,r2	H'01'				;	then object1HC --  (move frog left)
+07BE : CE 1F 0A		stra,r2	object1HC
+07C1		if07C1:
+
+07C1 : 06 03		lodi,r2	H'03'				; ++++++++++++++++++++ FOR N = 2 TO 0 ++++++++++++++++++++++++++++++++++
+								; calculate HC for K_group:  B_logs, A_cars, A_trucks
+07C3		branch07C3:
+07C3 : 0E 5F 59		loda,r0	array_ HC_B_logs [0-2],r2,-	; get HC for a B_log
+07C6 : A4 01		subi,r0	H'01'				; move it left
+07C8 : 98 19		bcfr,eq	branch07E3			; if it has reached the left side of the screen
+07CA : 0E 7F 8C		loda,r0	array_shape_B_logs,r2			; then  
+07CD : D0		rrl,r0
+07CE : 44 FE		andi,r0	H'FE'					; shorten log shape by one bit on its right
+07D0 : CE 7F 8C		stra,r0	array_shape_B_logs,r2
+07D3 : 44 7F		andi,r0	H'7F'
+07D5 : C1		strz	r1
+07D6 : 04 08		lodi,r0	H'08'
+07D8 : 59 09		brnr,r1	branch07E3				; if there is only 1 bit left, 
+07DA : 0C 1F 9F		loda,r0	log_shape					; then
+07DD : CE 7F 8C		stra,r0	array_shape_B_logs,r2				; reset full log length when it reappears on right
+07E0 : 0C 1F 9D		loda,r0	max_HC_river					; set new HC for it on right of screen
+07E3		branch07E3:						 
+07E3 : CE 7F 59		stra,r0	array_ HC_B_logs,r2		; save HC for a B_log 
+
+											
+07E6 : 0E 7F 65		loda,r0	array_HC_A_cars,r2	
+07E9 : A4 01		subi,r0	H'01'				; move it left
+07EB : 98 03		bcfr,eq	branch07F0			; if it has reached the left side of the screen
+07ED : 0C 1F 9E		loda,r0	max_HC_road				; then set new HC 
+07F0		branch07F0:
+07F0 : CE 7F 65		stra,r0	array_HC_A_cars,r2		; save new HC
+
+
+07F3 : 0E 7F 62		loda,r0	array_HC_A_trucks,r2
+07F6 : 84 01		addi,r0	H'01'				; array_HC_A_trucks ++
+07F8 : EC 1F 9E		coma,r0	max_HC_road
+07FB : 1A 01		bctr,lt	branch07FE			; if array_HC_A_trucks >= max_HC_road
+07FD : 20		eorz	r0				;	then another-counter = 0
+07FE		branch07FE:
+07FE : CE 7F 62		stra,r0	array_HC_A_trucks,r2
+
+0801 : 5A 40		brnr,r2	branch07C3			;  +++++++++++++++++++  END FOR R2 = 2 TO 0  ++++++++++++++++++++++++++++
+
+							; endif
+
+
+
+
+								
+
+0803		move_B_cars:			; from 07AF, 0801  with r3 = LUT_speed_control[speed_control_counter-]
+									
+0803 : 0C 1F 94		loda,r0	B_car_control
+0806 : 43		andz	r3
+0807 : 18 12		bctr,eq	else081B		; if B_car_control &&  LUT_speed_control[speed_control_counter] != 0
+0809 : 06 03		lodi,r2	H'03'			; then  calculate HC of B_cars
+
+080B		loop080B:					; for N=2 to 0
+080B : 0E 5F 68		loda,r0	array_HC_B_cars,r2,-		
+080E : 84 01		addi,r0	H'01'					; array_HC_B_cars[N] ++
+0810 : EC 1F 9E		coma,r0	max_HC_road				; if array_HC_B_cars[N] >= max_HC_road
+0813 : 1A 01		bctr,lt	else0816	
+0815 : 20		eorz	r0					; then array_HC_B_cars[N] = 0
+0816		else0816:
+0816 : CE 7F 68		stra,r0	array_HC_B_cars,r
+0819 : 5A 70		brnr,r2	loop080B			; end for
+
+081B		else081B:				;  end if
+
+
+
+							;MOVE SNAKE
+								; NOTE: the control logic for moving the snake is different than for other objects
+								; The snake is moved if the result of the && operation is zero (rather than one).
+								; When snake_control == $01 (ie at start up, in level 1) it does not move and stays offscreen.
+								; snake_control gets shifted left by two bits at the start of level 3 and begins moving slowly
+								;
+
+081B : 0C 1F 95		loda,r0	snake_control
+081E : 43		andz	r3
+081F : 98 10		bcfr,eq	nothing_else_to_move		; if snake_control &&  LUT_speed_control[speed_control_counter-] == 0
+0821 : 06 03		lodi,r2	H'03'				; then
+0823		loop0823:						; for N=2 to 0
+0823 : 0E 5F 5F		loda,r0	array_HC_snake,r2,-
+0826 : A4 01		subi,r0	H'01'					; array_HC_snake[N] --
+0828 : 98 02		bcfr,eq	branch082C				; if array_HC_snake == 0
+082A : 04 E5		lodi,r0	H'E5'					; then array_HC_snake = $E5
+082C		branch082C:
+082C : CE 7F 5F		stra,r0	array_HC_snake,r2
+082F : 5A 72		brnr,r2	loop0823				; end for
+								; endif
+
+
+
+0831		nothing_else_to_move:				; from 0714, 081F
+0831 : 07 53		lodi,r3	H'53'
+0833 : 3F 0D C0		bsta,un	subr_horiz_pos_duplicates234	; output HC of A_logs (1F53)
+
+0836 : 3F 0D 9B		bsta,un	subr_wait_obj4_complete		; WAIT for 'home bank frogs' to complete~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+0839 : 04 19		lodi,r0	H'19'
+083B : CC 1F C6		stra,r0	backgroundcolours		; set grid and screen blue
+
+083E : 06 09		lodi,r2	H'09'
+0840 : 3F 0D 90		bsta,un	subr_obj_size_colour		; 234 are yellow, size 11, frog is green, size 00
+
+0843 : 04 00		lodi,r0	H'00'
+0845 : CC 1F 1D		stra,r0	object2VCB
+0848 : CC 1F 2D		stra,r0	object3VCB			; set vertical offsets to 0. 
+084B : CC 1F 4D		stra,r0	object4VCB			;  ( between A_logs / A_lilies )
+
+084E : 07 86		lodi,r3	H'86'				; pointer to array_shape_A_logs
+0850 : 3F 0D A4		bsta,un	subr_two_bytes_obj234		; output log shapes to the first two lines of objects 2,3,4
+
+0853 : 07 08		lodi,r3	H'08'
+0855 : 20		eorz	r0
+0856		loop0856:
+0856 : CF 5F 22		stra,r0	object3SHAPE_line3,r3,-		; clear the last 8 lines of A_logs
+0859 : CF 7F 42		stra,r0	object4SHAPE_line3,r3
+085C : CF 7F 12		stra,r0	object2SHAPE_line3,r3
+085F : 5B 75		brnr,r3	loop0856
+
+0861 : 04 23		lodi,r0	H'23'				; ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+0863		loop0863:					; delay / timing loop - waiting for the two lines of the log to be displayed
+0863 : F8 7E		bdrr,r0	loop0863
+			~~~~~~~~~~~~~~~~
+
+0865 : 0F 0F E0		loda,r3	V_hex56				; r3=$56 pointer to array_HC_A_lillies (trap for anyone changing the copyright text)
+0868 : 0E 1F 8B		loda,r2	index_A_lillies_colours			
+086B : 3F 0D 5F		bsta,un	subr_lillies			; set object sizes and colours [index_A_lillies_colours]
+									; (the remainder of the log is reduced to size %00)
+									; output top two rows of lillies shape
+									; set HC of lillies from array_HC_A_lillies
+									; wait for logs to complete ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+									; set lillies size %01, frog size %00
+									; output last lines of lillies shape.
+
+086E : 07 03		lodi,r3	H'03'
+0870 : CF 1F 1D		stra,r3	object2VCB
+0873 : CF 1F 2D		stra,r3	object3VCB			; set vertical offset of duplicates = 3
+0876 : CF 1F 4D		stra,r3	object4VCB			; ( A_lillies to B_logs )
+
+0879 : 07 1F		lodi,r3	H'1F'
+087B		loop087B:					;  ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+087B : FB 7E		bdrr,r3	loop087B
+			~~~~~~~~~~~~~~~~
+
+087D : 0E 0D 2E		loda,r2	X0D2E				; r2 = $0C
+0880 : 3F 0D 90		bsta,un	subr_obj_size_colour		; all size 00, frog green, 234 yellow
+
+0883 : 07 8C		lodi,r3	H'8C'				; pointer to array_shape_B_logs
+0885 : 3F 0D A4		bsta,un	subr_two_bytes_obj234		; output B_log shapes to the first two lines of objects 2,3,4
+
+0888 : 07 59		lodi,r3	H'59'
+088A : 3F 0D C0		bsta,un	subr_horiz_pos_duplicates234	; output HC of B_logs (1F59)
+
+088D : 05 FC		lodi,r1	H'FC'
+
+088F : 3F 0D 9B		bsta,un	subr_wait_obj4_complete		; wait for lillies to complete ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+0892 : CD 1F C0		stra,r1	objectsizes			; frog size %00(x1), logs size %11(x8)
+0895 : 20		eorz	r0
+0896 : 07 03		lodi,r3	H'03'
+0898		loop0898:
+0898 : CF 5F 12		stra,r0	object2SHAPE_line3,r3,-
+089B : CF 7F 22		stra,r0	object3SHAPE_line3,r3		; clear lines 3,4,5 
+089E : CF 7F 42		stra,r0	object4SHAPE_line3,r3
+08A1 : 5B 75		brnr,r3	loop0898
+
+08A3 : 07 00		lodi,r3	H'00'
+08A5 : CF 1F 1D		stra,r3	object2VCB
+08A8 : CF 1F 2D		stra,r3	object3VCB			; set vertical offsets to 0
+08AB : CF 1F 4D		stra,r3	object4VCB			; ( B_logs to B_lillies )
+
+08AE : 07 55		lodi,r3	H'55'
+08B0		loop08B0:					;  ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+08B0 : FB 7E		bdrr,r3	loop08B0
+
+08B2 : 07 5C		lodi,r3	H'5C'
+08B4 : 0E 1F 91		loda,r2	index_B_lillies_colours
+08B7 : 3F 0D 5F		bsta,un	subr_lillies			; set object sizes and colours [index_B_lillies_colours]
+									; (the remainder of the log is reduced to size %00)
+									; output top two rows of lillies shape
+									; set HC of lillies from array_HC_B_lillies
+									; wait for logs to complete ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+									; set lillies size %01, frog size %00
+									; output last lines of lillies shape.
+
+08BA : 07 28		lodi,r3	H'28'
+08BC		loop08BC:					;  ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+08BC : FB 7E		bdrr,r3	loop08BC
+
+08BE : CF 1F C0		stra,r3	objectsizes			; all objects size %00
+08C1 : 07 5F		lodi,r3	H'5F'
+08C3 : 3F 0D C0		bsta,un	subr_horiz_pos_duplicates234	; output HC of snake
+
+08C6 : 07 07		lodi,r3	H'07'
+08C8 : CF 1F 1D		stra,r3	object2VCB
+08CB : 07 03		lodi,r3	H'03'				; NOTE: the snake's tongue is size %00, the head and body size %01
+08CD : CF 1F 2D		stra,r3	object3VCB			; hence the different vertical offsets
+08D0 : CF 1F 4D		stra,r3	object4VCB
+
+08D3 : 06 0F		lodi,r2	H'0F'
+08D5 : 3F 0D 90		bsta,un	subr_obj_size_colour		; frog green size%00, snake's tongue red size %00, 
+										; head and body black size %01
+
+08D8 : 05 04		lodi,r1	H'04'
+08DA		loop08DA:					;  ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+08DA : F9 7E		bdrr,r1	loop08DA
+08DC : C0		nop
+
+08DD : 05 6E		lodi,r1	H'6E'
+08DF : CD 1F C6		stra,r1	backgroundcolours		; grid and screen both yellow
+
+08E2 : 07 FF		lodi,r3	H'FF'
+08E4		loop08E4:
+08E4 : 0F 2F 38		loda,r0	snake_tongue,r3,+		; output 7 lines of snake to objects 2,3,4
+08E7 : CF 7F 10		stra,r0	object2SHAPE,r3
+08EA : 0F 6F 3F		loda,r0	snake_head,r3
+08ED : CF 7F 20		stra,r0	object3SHAPE,r3
+08F0 : 0F 6F 45		loda,r0	snake_tail,r3
+08F3 : CF 7F 40		stra,r0	object4SHAPE,r3
+08F6 : E7 06		comi,r3	H'06'
+08F8 : 98 6A		bcfr,eq	loop08E4
+
+08FA : 07 01		lodi,r3	H'01'
+08FC : CF 1F 2D		stra,r3	object3VCB			
+08FF : CF 1F 4D		stra,r3	object4VCB			; ! because the snake's tongue is size %00, the head and body size %01
+0902 : 07 06		lodi,r3	H'06'
+0904 : CF 1F 1D		stra,r3	object2VCB			
+
+0907		loop0907:
+0907 : FB 7E		bdrr,r3	loop0907			;  ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+
+0909 : CF 1F 10		stra,r3	object2SHAPE			; clear first line of objects 2,3,4
+090C : CF 1F 20		stra,r3	object3SHAPE
+090F : CF 1F 40		stra,r3	object4SHAPE
+
+0912 : 06 12		lodi,r2	H'12'
+0914 : 3F 0D 90		bsta,un	subr_obj_size_colour		; frog green size %00, trucks size %01 red cyan white
+
+0917 : 07 08		lodi,r3	H'08'
+0919 : CF 1F C6		stra,r3	backgroundcolours		; grid and screen both black
+
+091C : 07 62		lodi,r3	H'62'
+091E : 3F 0D C0		bsta,un	subr_horiz_pos_duplicates234	; output HC of A_trucks ? 
+
+0921 : 07 FF		lodi,r3	H'FF'
+0923		loop0923:
+0923 : 0F 2F A4		loda,r0	right_truck,r3,+
+0926 : CF 7F 11		stra,r0	object2SHAPE_line2,r3		; output 9 lines of truck shape 
+0929 : CF 7F 21		stra,r0	object3SHAPE_line2,r3		; to bottom 9 lines of the objects
+092C : CF 7F 41		stra,r0	object4SHAPE_line2,r3
+092F : E7 08		comi,r3	H'08'
+0931 : 98 70		bcfr,eq	loop0923
+
+0933 : 07 04		lodi,r3	H'04'				; set vertical offset to 4
+0935 : CF 1F 1D		stra,r3	object2VCB
+0938 : CF 1F 2D		stra,r3	object3VCB
+093B : CF 1F 4D		stra,r3	object4VCB
+
+093E : 07 42		lodi,r3	H'42'
+0940 : CF 1F 19		stra,r3	object2SHAPE_line10		; why do this again?????????????
+0943 : CF 1F 29		stra,r3	object3SHAPE_line10
+0946 : CF 1F 49		stra,r3	object4SHAPE_line10
+
+0949 : 20		eorz	r0				
+094A : CC 1F 11		stra,r0	object2SHAPE_line2		; clear line 2 of objects 2,3,4
+094D : CC 1F 21		stra,r0	object3SHAPE_line2
+0950 : CC 1F 41		stra,r0	object4SHAPE_line2
+
+0953 : 07 FF		lodi,r3	H'FF'
+0955		loop0955:
+0955 : 0F 2F 4C		loda,r0	car,r3,+			
+0958 : CF 7F 12		stra,r0	object2SHAPE_line3,r3		; output 8 lines of car shape,
+095B : CF 7F 22		stra,r0	object3SHAPE_line3,r3		; starting at line 3 in the sprite
+095E : CF 7F 42		stra,r0	object4SHAPE_line3,r3		; the car shape is only 6 bytes deep. The last two are blank
+0961 : E7 07		comi,r3	H'07'
+0963 : 98 70		bcfr,eq	loop0955
+
+0965 : 05 2A		lodi,r1	H'2A'
+0967 : CD 1F C1		stra,r1	colour12			; frog green, car purple
+096A : 05 21		lodi,r1	H'21'
+096C : CD 1F C2		stra,r1	colour34			; cars cyan, yellow
+
+096F : 07 65		lodi,r3	H'65'
+0971 : 3F 0D C0		bsta,un	subr_horiz_pos_duplicates234	; set HC of A_cars
+
+0974 : 0F 0B 62		loda,r3	tell_us				; r3 = $D0  obfuscation
+0977 : 53		rrr,r3					; r3 = $68  
+0978		loop0978:
+0978 : FB 7E		bdrr,r3	loop0978			; ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+
+097A : 07 2D		lodi,r3	H'2D'
+097C : CF 1F C1		stra,r3	colour12			; green, green
+097F : 07 03		lodi,r3	H'03'
+0981 : CF 1F C2		stra,r3	colour34			; white, red		B_cars
+
+0984 : 07 68		lodi,r3	H'68'
+0986 : 3F 0D C0		bsta,un	subr_horiz_pos_duplicates234	; HC B_cars
+
+0989 : 07 01		lodi,r3	H'01'	
+098B : CF 1F 1D		stra,r3	object2VCB
+098E : CF 1F 2D		stra,r3	object3VCB
+0991 : CF 1F 4D		stra,r3	object4VCB			; vertical offsets = 1
+
+0994 : 07 33		lodi,r3	H'33'
+0996		loop0996:
+0996 : FB 7E		bdrr,r3	loop0996			; ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+
+0998 : 07 42		lodi,r3	H'42'
+099A : CF 1F 11		stra,r3	object2SHAPE_line2		; output wheels of trucks in line 2 of object 2,3,4
+099D : CF 1F 21		stra,r3	object3SHAPE_line2		; ?? I would guess that this first line had to be drawn really fast ??
+09A0 : CF 1F 41		stra,r3	object4SHAPE_line2		; @@ The subroutine is complex because it has to find the correct trucks
+								; ?? but the colors / HCB aren't set until after the subroutine??
+								; @@ it must be doing this while the last lines of the B_cars are being output
+09A3 : 06 FF		lodi,r2	H'FF'
+09A5 : 3F 0D 2E		bsta,un	subr_shape_B_trucks	; output first 5 lines of the truck shape, top down
+
+09A8 : 07 2C		lodi,r3	H'2C'
+09AA : CF 1F C1		stra,r3	colour12			; green, cyan
+09AD : 07 0B		lodi,r3	H'0B'
+09AF : CF 1F C2		stra,r3	colour34			; yellow, red		B_trucks
+
+09B2 : 07 6B		lodi,r3	H'6B'
+09B4 : 3F 0D C0		bsta,un	subr_horiz_pos_duplicates234	; HC B_trucks
+
+09B7 : 3F 0D 2E		bsta,un	subr_shape_B_trucks		; output last 3 lines of the truck shape
+
+09BA : 07 0C		lodi,r3	H'0C'
+09BC : CF 1F 2D		stra,r3	object3VCB
+09BF : CF 1F 4D		stra,r3	object4VCB			; vertical offset to timer / life display in objects 3 and 4
+
+09C2 : 07 FE		lodi,r3	H'FE'
+09C4 : CF 1F 1D		stra,r3	object2VCB			; push object 2 offscreen
+
+09C7 : 0C 1F 4E		loda,r0	timer_P
+09CA : A4 01		subi,r0	H'01'				; timer_P --
+09CC : 0D 1F 1E		loda,r1	stopwatch
+09CF : D1		rrl,r1					; stopwatch <<
+09D0 : 45 FE		andi,r1	H'FE'				; clear bit 0 stopwatch
+09D2 : 58 06		brnr,r0	branch09DA			; if timer_P == 0
+09D4 : CD 1F 1E		stra,r1	stopwatch				; then 	save stopwatch
+09D7 : 0C 1F A1		loda,r0	timer_P_reset_value	**	;	timer_P = timer_P_reset_value
+09DA		branch09DA:					; 
+09DA : CC 1F 4E		stra,r0	timer_P				; else  timer_P = its decremented value
+									** It seems strange that the load, rotate and & operations are done before the branch.
+									** The only explanation I can think of is that doing them after the branch instruction
+									** would add too much variablility to the timing.
+
+		; CONTROL SOUND EFFECTS
+
+09DD : 0D 1F A3		loda,r1	control_bits_2			; CASE
+09E0 : F5 01		tmi,r1	H'01'
+09E2 : 1C 0A B0		bcta,eq	game_beaten				; if bit 0 of control_bits_2 == 1, EXIT TO game_beaten
+09E5 : F5 10		tmi,r1	H'10'
+09E7 : 98 07		bcfr,eq	branch09F0				; if bit 4 of control_bits_2 == 1, (frog reached home)
+09E9 : 0C 1F 53		loda,r0	array_HC_A_logs 			;   		r0 = array_HC_A_logs &07 to use as sound
+09EC : 44 07		andi,r0	H'07'					; 		(using bits 210 of a regularly incrementing logHC as pitch)
+09EE : 1B 21		bctr,un	frog_pitch
+							
+				
+09F0		branch09F0:		
+09F0 : F5 20		tmi,r1	H'20'
+09F2 : 98 0A		bcfr,eq	frog_leaping_sound			; if bit 5 of control_bits_2 == 1, (lost a life)
+09F4 : 0C 1F 53		loda,r0	array_ HC_A_logs 
+09F7 : 4C 0B 14		anda,r0	X0B14  #$0E#				;		r0 = (array_HC_A_logs &0E)+$10 to use as sound	
+09FA : 84 10		addi,r0	H'10'					; 		(lower pitch than FX above, and slower changing)
+09FC : 1B 13		bctr,un	frog_pitch
+										
+		      
+09FE		frog_leaping_sound:					; ELSE	
+09FE : 20		eorz	r0
+09FF : 0D 1F 9B		loda,r1	frog_animation					;if frog_animation == 0,	
+0A02 : 18 0D		bctr,eq	frog_pitch					;then r0 = 0, turn off sound
+
+0A04 : 0C 1F 9A		loda,r0	joystick_udlr					;else
+0A07 : 64 08		iori,r0	H'08'
+0A09 : A4 05		subi,r0	H'05'							; r0 = (joystick_udlr|8)-5  (result is either 3,4,5 or 7)
+0A0B : E5 07		comi,r1	H'07'
+0A0D : 19 02		bctr,gt	frog_pitch						; if frog_animation > 7, goto frog_pitch and set pitch=r0
+0A0F : 04 06		lodi,r0	H'06'							; else pitch = 6
+								; END CASE
+
+0A11		frog_pitch:		; from 09EE, 09FC, 0A02, 0A0D, 0A0F  with r0 = pitch
+0A11 : CC 1F C7		stra,r0	sound
+					-------------------
+
+
+
+
+
+0A14 : 06 18		lodi,r2	H'18'
+0A16		loop0A16:					; ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+0A16 : FA 7E		bdrr,r2	loop0A16
+
+							;DISPLAY LIFE AND TIME BARS
+0A18 : 06 58		lodi,r2	H'58'
+0A1A : CE 1F 2B		stra,r2	object3HCB			; object 3 HCB = $58 (88)
+
+0A1D : 0D 1F 1F		loda,r1	lifes_left			; r1 = lifes_left
+0A20 : 06 80		lodi,r2	H'80'				; object 4 HCB = $80
+
+0A22 : 0C 1F A3		loda,r0	control_bits_2
+0A25 : F4 08		tmi,r0	H'08'				; if player 1
+0A27 : 18 06		bctr,eq	display_life_counter			;then
+0A29 : 06 38		lodi,r2	H'38'				 	;object 4 HCB=$38
+0A2B : 51		rrr,r1				
+0A2C : 51		rrr,r1
+0A2D : 51		rrr,r1
+0A2E : 51		rrr,r1						;shift player 1 life count into bits 210
+
+0A2F		display_life_counter:
+0A2F : CE 1F 4B		stra,r2	object4HCB			; object 4 HCB  = $38(56) (player 1 lifes) or $80(128) (player 2 lifes)
+
+0A32 : 45 07		andi,r1	H'07'				; use bits 210 of r1 as index to get shape of life counter
+0A34 : 0D 6A AB		loda,r0	LUT_lives_display,r1
+0A37 : CC 1F 41		stra,r0	object4SHAPE_line2		; display in lines 2 and 3 of object 4
+0A3A : CC 1F 42		stra,r0	object4SHAPE_line3
+
+0A3D : 0E 1F 1E		loda,r2	stopwatch
+0A40 : CE 1F 22		stra,r2	object3SHAPE_line3		; time left display? in line 3 of object 3
+0A43 : 46 AA		andi,r2	H'AA'
+0A45 : CE 1F 21		stra,r2	object3SHAPE_line2		; dotted line in line 2 of object 3
+
+0A48 : 06 03		lodi,r2	H'03'
+0A4A : 20		eorz	r0
+0A4B		loop0A4B:
+0A4B : CE 5F 23		stra,r0	object3SHAPE_line4,r2,-		; clear lines 4,5,6 of objects 3 and 4
+0A4E : CE 7F 43		stra,r0	object4SHAPE_line4,r2
+0A51 : 5A 78		brnr,r2	loop0A4B
+
+0A53 : 06 04		lodi,r2	H'04'
+0A55		loop0A55:
+0A55 : 0E 4E C4		loda,r0	X0EC4,r2,-
+0A58 : CE 7F 16		stra,r0	object2SHAPE_line7,r2		; output bottom lines of home bank frog ready for next frame
+0A5B : CE 7F 26		stra,r0	object3SHAPE_line7,r2
+0A5E : CE 7F 46		stra,r0	object4SHAPE_line7,r2		
+0A61 : 5A 72		brnr,r2	loop0A55
+
+									; DETERMINE COLOUR INDEX FOR B LILLIES
+0A63 : 0E 1F 8F		loda,r2	status_B_lillies 			
+0A66 : E6 03		comi,r2	H'03'				; CASE:
+0A68 : 18 10		bctr,eq	branch0A7A				; if  status_B_lillies  == 3,   exit with index_B_lillies_colours = status_B_lillies  = 3
+0A6A : 0D 1F 90		loda,r1	counter_flash_B_lillies
+0A6D : 18 0B		bctr,eq	branch0A7A				; if  counter_flash_B_lillies  == 0,  exit with index_B_lillies_colours = status_B_lillies 
+0A6F : A5 01		subi,r1	H'01'
+0A71 : CD 1F 90		stra,r1	counter_flash_B_lillies			; counter_flash_B_lillies --
+0A74 : F5 08		tmi,r1	H'08'				
+0A76 : 98 02		bcfr,eq	branch0A7A				; if  counter_flash_B_lillies{bit3} == 0,  exit with index_B_lillies_colours = status_B_lillies 
+												;(bit3 is 1 for 8 frames, 0 for 8 frames. Flashes ~3 times/s)
+0A78 : 06 03		lodi,r2	H'03'					; else  exit with index_B_lillies_colours = 3
+0A7A		branch0A7A:
+0A7A : CE 1F 91		stra,r2	index_B_lillies_colours		; ENDCASE		
+
+
+									; DETERMINE COLOUR INDEX FOR A LILLIES
+0A7D : 0E 1F 89		loda,r2	status_A_lillies
+0A80 : E6 03		comi,r2	H'03'				; CASE:
+0A82 : 18 10		bctr,eq	branch0A94				; if  status_A_lillies == 3,  exit with index_A_lillies_colours = status_A_lillies = 3 (all white)
+0A84 : 0D 1F 8A		loda,r1	counter_flash_A_lillies
+0A87 : 18 0B		bctr,eq	branch0A94				; if  counter_flash_A_lillies == 0,  exit with index_A_lillies_colours= status_A_lillies
+0A89 : A5 01		subi,r1	H'01'					 
+0A8B : CD 1F 8A		stra,r1	counter_flash_A_lillies			; counter_flash_A_lillies --
+0A8E : F5 08		tmi,r1	H'08'
+0A90 : 98 02		bcfr,eq	branch0A94				; if  counter_flash_A_lillies{bit3} == 0,  exit with index_A_lillies_colours= status_A_lillies
+										;(bit3 is 1 for 8 frames, 0 for 8 frames. Flashes ~3 times/s)
+0A92 : 06 03		lodi,r2	H'03'					; else  exit with index_A_lillies_colours = 3
+0A94		branch0A94:					
+0A94 : CE 1F 8B		stra,r2	index_A_lillies_colours			; ENDCASE
+
+
+
+
+0A97 : 04 20		lodi,r0	H'20'
+0A99		loop0A99:			; ~~~~~~~~~~~~~~~~~ delay / timing loop ~~~~~~~~~~~~~~~~~~~~~~~
+0A99 : F8 7E		bdrr,r0	loop0A99
+
+
+0A9B : 06 02		lodi,r2	H'02'
+0A9D		loop0A9D:
+0A9D : CE 5F 11		stra,r0	object2SHAPE_line2,r2,-		; clear lines 1 and 2 of objects 234
+0AA0 : CE 7F 21		stra,r0	object3SHAPE_line2,r2
+0AA3 : CE 7F 41		stra,r0	object4SHAPE_line2,r2
+0AA6 : 5A 75		brnr,r2	loop0A9D
+0AA8 : 1F 02 B0		bcta,un	start_new_frame
+		;	======================
+
+
+0AAB		LUT_lives_display:			; patterns for the life display
+0AAB : 00		db	H'00'
+
+0AAC : 01		db	H'01'	                            ████
+
+0AAD : 05		db	H'05'			    ████    ████
+
+0AAE : 15		db	H'15'	            ████    ████    ████
+
+0AAF : 55		db	H'55'	    ████    ████    ████    ████
+
+
+
+		game_beaten:        ; from 09E2     ( bit 0 of control_bits_2 == 1; game beaten)
+0AB0 : 04 0B		lodi,r0 $0B
+0AB2 : CC 1F C6		stra,r0 $1FC6			; grid enabled, black grid, cyan screen
+
+0AB5 : 06 4D		lodi,r2 $4D
+0AB7 : 20		eorz,r0
+		loop0AB7:
+0AB8 : CE 5F 00		stra,r0	$1F00,r2-		; clear pvi
+0ABB : 5A 7B		brnr,r2 loop0AB7
+
+0ABD : 06 2D		lodi,r2 $2D
+		loop0ABF:				
+0ABF : 0E 4B 35		loda,r0	you_beat_it,r2-
+0AC2 : CE 7F 80		stra,r0 $1f80,r2		; set vertical and horizontal bar definitions 1F80-1FAC
+0AC5 : 5A 78		brnr,r2	loop0ABF		; to display 	YOU
+											 BEAT
+											  IT !!
+
+0AC7 : 06 04		lodi,r2	$04
+0AC9 : CE 1F 60		stra,r2	four_cycles  		; four_cycles  = 4
+		
+0ACC		loop0ACC:				; REPEAT
+0ACC : 05 09		lodi,r1	H'09'
+0ACE : CD 1F 62		stra,r1	effects_counter 		; effects_counter = 9
+0AD1 : 06 99		lodi,r2	H'99'
+0AD3 : CE 1F C8		stra,r2	score12
+0AD6 : CE 1F C9		stra,r2	score34				; set score digits to 9999    
+
+0AD9		loop0AD9:					; REPEAT
+0AD9 : 0D 1F 62		loda,r1	effects_counter 
+0ADC : A5 01		subi,r1	H'01'					; effects_counter --
+0ADE : 18 24		bctr,eq	branch0B04		 	    ; UNTIL effects_counter == 0, THEN EXIT TO branch0B04
+0AE0 : E5 06		comi,r1	H'06'				
+0AE2 : 98 08		bcfr,eq	branch0AEC				; if effects_counter == 6
+0AE4 : 07 AA		lodi,r3	H'AA'				
+0AE6 : CF 1F C8		stra,r3	score12					; then blank score digits (FLASH THE SCORE)
+0AE9 : CF 1F C9		stra,r3	score34
+0AEC		branch0AEC:						; endif
+
+0AEC : CD 1F 62		stra,r1	effects_counter 			; save effects_counter
+0AEF : CD 1F 61		stra,r1	frame_counter				; frame_counter = effects_counter 
+0AF2 : CD 1F C7		stra,r1	sound					; sound = effects_counter 
+
+0AF5		loop0AF5:						; REPEAT
+0AF5 : 3F 0D 54		bsta,un	subr_wait_vert_reset	 			; wait for vertical reset ~~~~~~~~~~~~~~~~~~~~~
+												~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+0AF8 : 0D 1F 61		loda,r1	frame_counter
+0AFB : A5 01		subi,r1	H'01'						; frame_counter --
+0AFD : CD 1F 61		stra,r1	frame_counter
+0B00 : 59 73		brnr,r1	loop0AF5				; UNTIL frame_counter == 0
+
+0B02 : 1B 55		bctr,un	loop0AD9			; END REPEAT
+		;	----------------
+
+0B04		branch0B04:   (from 0ADE)
+0B04 : 0E 1F 60		loda,r2	four_cycles 
+0B07 : A6 01		subi,r2	H'01'
+0B09 : CE 1F 60		stra,r2	four_cycles 		; four_cycles  --
+0B0C : 5E 0A CC		brna,r2	loop0ACC		; UNTIL four_cycles  != 0 
+
+
+
+0B0F : CE 1F C7		stra,r2	sound				; turn off sound
+
+0B12 : 06 2D		lodi,r2	H'2D'
+0B14		loop0B14:
+0B14 : 0E 4B 62		loda,r0	tell_us,r2,-	
+0B17 : CE 7F 80		stra,r0	grid_v1,r2			; vertical and horizontal bar definitions (game beaten)
+0B1A : 5A 78		brnr,r2	loop0B14			; to display	TELL US
+												  0462
+												 894410
+
+0B1C		loop0B1C:				;DO
+0B1C : 3F 0D 54		bsta,un	subr_wait_vert_reset		; wait for vertical reset~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+										; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+0B1F : 0D 1E 8B		loda,r1	console				; read the console switches
+0B22 : F5 80		tmi,r1	H'80'				
+0B24 : 1C 04 5A		bcta,eq	SELECT				; if select button pressed, EXIT DO LOOP (goto SELECT)
+0B27 : F5 40		tmi,r1	H'40'
+0B29 : 98 71		bcfr,eq	loop0B1C		; WHILE start button not pressed 
+
+
+									; (start button is now pressed)
+
+0B2B		loop0B2B:				; REPEAT
+0B2B : 3B F0		bstr,un	*X0B1D				; wait for vertical reset ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+								; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+0B2D : 09 F1		lodr,r1	*X0B20	(console)		; read the console switches
+0B2F : F5 40		tmi,r1	H'40'
+0B31 : 98 F2		bcfr,eq	*X0B25	(SELECT)		
+0B33 : 1B 76		bctr,un	loop0B2B		; UNTIL	start button released,  THEN  goto to select
+		;	=======================
+
+
+0B35		you_beat_it:		; horizontal and vertical grid definitions
+0B35 : 08		db	H'08'	; grid_v1	
+0B36 : 00		db	H'00'	    
+0B37 : 3F		db	H'3F'	
+0B38 : 00		db	H'00'	  
+0B39 : 20		db	H'20'	
+0B3A : 00		db	H'00'
+0B3B : 1F		db	H'1F'	
+0B3C : 00		db	H'00'
+0B3D : 0A		db	H'0A'
+0B3E : 00		db	H'00'	
+0B3F : 00		db	H'00'	
+0B40 : 00		db	H'00'	
+0B41 : 15		db	H'15'	
+0B42 : 60		db	H'60'	
+0B43 : 1D		db	H'1D'
+0B44 : A0		db	H'A0'	
+0B45 : 15		db	H'15'	
+0B46 : 00		db	H'00'	
+0B47 : 1D		db	H'1D'	
+0B48 : A0		db	H'A0'	
+0B49 : 14		db	H'14'	
+0B4A : 00		db	H'00'
+0B4B : 00		db	H'00'	
+0B4C : 00		db	H'00'
+0B4D : 06		db	H'06'
+0B4E : 00		db	H'00'	
+0B4F : 0A		db	H'0A'	
+0B50 : 60		db	H'60'	
+0B51 : 00		db	H'00'	
+0B52 : 00		db	H'00'	
+0B53 : 0A		db	H'0A'	 
+0B54 : 00		db	H'00'	
+0B55 : 0A		db	H'0A'	
+0B56 : 60		db	H'60'	
+0B57 : 00		db	H'00'	
+0B58 : 00		db	H'00'	
+0B59 : 00		db	H'00'		
+0B5A : 00		db	H'00'	
+0B5B : 00		db	H'00'	
+0B5C : 00		db	H'00'	
+
+0B5D : 09		db	H'09'	; grid_h1 
+0B5E : 09		db	H'09'
+0B5F : 09		db	H'09'
+0B60 : 01		db	H'01'
+0B61 : 00		db	H'00'	
+
+0B62		tell_us:
+0B62 : D0		db	H'D0'	;grid_v1	
+0B63 : 08		db	H'08'
+0B64 : 55		db	H'55'
+0B65 : 38		db	H'38'
+0B66 : 10		db	H'10'
+0B67 : 08		db	H'08'
+0B68 : 55		db	H'55'	
+0B69 : 34		db	H'34'
+0B6A : 15		db	H'15'
+0B6B : 28		db	H'28'	
+0B6C : 00		db	H'00'	
+0B6D : 00		db	H'00'	
+0B6E : 00		db	H'00'	
+0B6F : 00		db	H'00'	
+0B70 : 00		db	H'00'
+0B71 : 00		db	H'00'	
+0B72 : 08		db	H'08'	
+0B73 : 20		db	H'20'	
+0B74 : 0F		db	H'0F'	
+0B75 : 90		db	H'90'	
+0B76 : 02		db	H'02'	
+0B77 : A0		db	H'A0'	
+0B78 : 0D		db	H'0D'	
+0B79 : E0		db	H'E0'
+0B7A : 08		db	H'08'
+0B7B : A0		db	H'A0'	
+0B7C : 00		db	H'00'	
+0B7D : 00		db	H'00'	
+0B7E : 14		db	H'14'	
+0B7F : 08		db	H'08'	
+0B80 : 1F		db	H'1F'	 
+0B81 : FC		db	H'FC'	
+0B82 : 15		db	H'15'	
+0B83 : 40		db	H'40'	
+0B84 : 1A		db	H'1A'	
+0B85 : BC		db	H'BC'	
+0B86 : 10		db	H'10'	
+0B87 : 08		db	H'08'	
+0B88 : 00		db	H'00'	
+0B89 : 00		db	H'00'	
+		
+0B8A : 09		db	H'09'	grid_h1 
+0B8B : 01		db	H'01'
+0B8C : 09		db	H'09'
+0B8D : 09		db	H'09'
+0B8E : 09		db	H'09'	
+
+		;============================================================================================
+		;============================================================================================
+		;  subroutine  sub_level_control
+					; from 0433(player 2 loses life), 05CE and 05D3 (reached a hole, maybe the 4th hole?)
+					; increment level, and change control settings according to LUT_level_parameters[x]
+
+0B8F		sub_level_control:
+0B8F : 0D 1F A0		loda,r1	level			; r1 = level 
+0B92 : E5 0F		comi,r1	H'0F'
+0B94 : 9E 0B F0		bcfa,lt	slc_exit_level15	; if level >= $0F, EXIT via 0BF0
+
+0B97 : 0D 6F AD		loda,r0	LUT_level_parameters,r1		; see the data table itself for explanation
+								; of how it works.
+							
+								; every bit from the number selected gets tested below:
+0B9A : 85 01		addi,r1	H'01'	
+0B9C : C9 F2		strr,r1	*X0B90	@level@		; level ++
+
+							;---------------
+0B9E : 0D 1F 92		loda,r1	J_group_control		; r1 = J_group_control
+0BA1 : F4 80		tmi,r0	H'80'
+0BA3 : 98 01		bcfr,eq	slc_not_J_shiftR	; if LUT_level_parameters[level]{bit 7} == 1
+0BA5 : 51		rrr,r1				; then r1 = r1>>  (make it go faster)
+0BA6		slc_not_J_shiftR:
+0BA6 : F4 02		tmi,r0	H'02'
+0BA8 : 98 01		bcfr,eq	slc_not_J_shiftL	; if LUT_level_parameters[level]{bit 1} == 1
+0BAA : D1		rrl,r1				; then r1 = r1<<  (make it go slower)
+0BAB		slc_not_J_shiftL:
+0BAB : C9 F2		strr,r1	*X0B9F			; J_group_control = r1
+							;----------------
+
+							;-----------------
+0BAD : 0D 1F 93		loda,r1	K_group_control		; r1 = K_group_control
+0BB0 : F4 40		tmi,r0	H'40'
+0BB2 : 98 01		bcfr,eq	slc_not_K_shiftR	; if LUT_level_parameters[level]{bit 6} == 1
+0BB4 : 51		rrr,r1				; then r1 = r1>>  (make it go faster)	
+0BB5		slc_not_K_shiftR:			; endif
+0BB5 : F4 01		tmi,r0	H'01'
+0BB7 : 98 01		bcfr,eq	slc_not_K_shiftL	; if LUT_level_parameters[level]{bit 0} == 1
+0BB9 : D1		rrl,r1				; then r1 = r1<<  (make it go slower)
+0BBA		slc_not_K_shiftL:			; endif
+
+0BBA : C9 F2		strr,r1	*X0BAE			; K_group_control = r1
+							;----------------
+
+							;-----------------
+0BBC : F4 20		tmi,r0	H'20'
+0BBE : 98 06		bcfr,eq	slc_not_Bcar	
+0BC0 : 0D 1F 94		loda,r1	B_car_control		; if LUT_level_parameters[level]{bit 5} == 1
+0BC3 : 51		rrr,r1				; then B_car_control = B_car_control >>  (make it go faster)
+0BC4 : C9 FB		strr,r1	*X0BC1  @B_car_control@
+0BC6		slc_not_Bcar:				; endif
+							;----------------
+
+							;-----------------
+0BC6 : F4 10		tmi,r0	H'10'
+0BC8 : 98 07		bcfr,eq	slc_not_snake		; if LUT_level_parameters[level]{bit 4} of r0 == 1
+0BCA : 0D 1F 95		loda,r1	snake_control
+0BCD : D1		rrl,r1
+0BCE : D1		rrl,r1				; (these are without carry, so it only ever has the values $01,$04,$10,$40)
+0BCF : C9 FA		strr,r1	*X0BCB			; then snake_control = snake_control << <<
+0BD1		slc_not_snake:
+							;----------------
+
+							;-----------------
+0BD1 : F4 08		tmi,r0	H'08'			; if LUT_level_parameters[level]{bit 3} == 1
+0BD3 : 98 08		bcfr,eq	slc_not_log_shape
+0BD5 : 0D 1F 9F		loda,r1	log_shape
+0BD8 : D1		rrl,r1
+0BD9 : 45 FE		andi,r1	H'FE'			; then log_shape = log_shape <<, bit 0 cleared
+0BDB : C9 F9		strr,r1	*X0BD6
+0BDD		slc_not_log_shape:
+							;----------------
+
+							;-----------------
+0BDD : F4 04		tmi,r0	H'04'			; if LUT_level_parameters[level]{bit 2} == 1
+0BDF : 98 0E		bcfr,eq	slc_not_river_road
+0BE1 : 0D 1F 9D		loda,r1	max_HC_river		;     then
+0BE4 : 85 10		addi,r1	H'10'
+0BE6 : C9 FA		strr,r1	*X0BE2			;     max_HC_river = max_HC_river + $10
+0BE8 : 0D 1F 9E		loda,r1	max_HC_road
+0BEB : A5 10		subi,r1	H'10'
+0BED : C9 FA		strr,r1	*X0BE9			;     max_HC_road = max_HC_road - $10
+0BEF		slc_not_river_road:
+0BEF : 17		retc,un
+
+		;	-------
+
+0BF0		slc_exit_level15:	; alternative ending to sub_level_control
+					; takes this exit if level >= $0F
+
+0BF0 : 85 01		addi,r1	H'01'
+0BF2 : CD 1F A0		stra,r1	level			; level ++
+0BF5 : 0D 1F A1		loda,r1	timer_P_reset_value
+0BF8 : A5 01		subi,r1	H'01'
+0BFA : CD 1F A1		stra,r1	timer_P_reset_value	; timer_P_reset_value --
+0BFD : 17		retc,un
+
+
+		;============================================================================================
+		;============================================================================================
+0BFE		subr_test_interobject:			; from 0357, 067c
+0BFE : 0C 1F 0E		loda,r0	copy_interobject	; r0 = copy_interobject
+0C01 : 05 00		lodi,r1	H'00'			; r1=0
+0C03 : F4 20		tmi,r0	H'20'			
+0C05 : 14		retc,eq				; if frog collided object 2, return with r1=0 
+0C06 : 05 01		lodi,r1	H'01'
+0C08 : F4 10		tmi,r0	H'10'
+0C0A : 14		retc,eq				; if frog collided object 3, return with r1=1 
+0C0B : 05 02		lodi,r1	H'02'
+0C0D : 17		retc,un				; return with r1=2 { even if there is no collision ?? }
+
+
+		;============================================================================================
+		;============================================================================================
+0C0E		subr_select_start:		; from 045A   
+0C0E : 20		eorz	r0
+0C0F : CC 1F C7		stra,r0	sound			; quiet the sound output
+0C12 : 0D 1F A0		loda,r1	level
+0C15 : 85 01		addi,r1	H'01'			; r1 = level + 1
+0C17 : 20		eorz	r0			; r0 = 0  {we just did that!}
+
+									; convert level to BCD
+0C18		sss1:					; repeat
+0C18 : 84 66		addi,r0	H'66'			; 	
+0C1A : 75 01		cpsl	H'01'			; 	clear carry
+0C1C : 84 01		addi,r0	H'01'			; 	BCD addition: r0=r0+1
+0C1E : 94		dar,r0				;	
+0C1F : A5 01		subi,r1	H'01'			; 	r1 = r1 - 1
+0C21 : 98 75		bcfr,eq	sss1			; until r1 == 0
+
+0C23 : CC 1F A0		stra,r0	level	; level = r0
+0C26 : 04 08		lodi,r0	H'08'
+0C28 : CC 1F C6		stra,r0	backgroundcolours	; enable grid, grid and screen both black
+0C2B		sss2:
+0C2B : 05 32		lodi,r1	H'32'
+0C2D : CD 1F 4E		stra,r1	timer_P			; timer_P = $32 (50)
+
+0C30 : 05 05		lodi,r1	H'05'				
+0C32 : 0E 1F AC		loda,r2	control_bits
+0C35 : F6 40		tmi,r2	H'40'				; if in attract mode, 
+0C37 : 18 02		bctr,eq	sss3				;   then timer_Q = 5 
+0C39 : 05 19		lodi,r1	H'19'				;   else timer_Q = $19  
+0C3B		sss3:						
+0C3B : CD 1F 4F		stra,r1	timer_Q	
+
+
+0C3E		sss4:
+0C3E : 3F 0D 54		bsta,un	subr_wait_vert_reset		; ~~~~~~~~~~~~~~~~~~ wait for vertical reset ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+0C41 : 0D 1F CA		loda,r1	backgroundcollision_complete	; clear backgroundcollision_complete register
+0C44 : 05 02		lodi,r1	H'02'
+0C46 : CD 1F C3		stra,r1	scoreformat			; score: 4 digits at top of screen
+
+0C49 : 0C 1F A0		loda,r0	level		; r0 = level  LOW SCORE
+0C4C : 05 00		lodi,r1	H'00'				; r1 = 0  HIGH SCORE
+0C4E : 3F 0E 16		bsta,un	subr_display_score		; display the score
+0C51 : 3F 0C C1		bsta,un	subr_1or2_player		; display screen where number of players is selected
+
+0C54 : 0D 1F 4E		loda,r1	timer_P
+0C57 : A5 01		subi,r1	H'01'
+0C59 : CD 1F 4E		stra,r1	timer_P				; decrement timer_P
+
+0C5C : 59 10		brnr,r1	sss5				;   if != 0 goto sss5
+0C5E : 05 32		lodi,r1	H'32'				;   else
+0C60 : CD 1F 4E		stra,r1	timer_P				; timer_P = $32  (one second timer?)
+0C63 : 0E 1F 4F		loda,r2	timer_Q
+0C66 : A6 01		subi,r2	H'01'
+0C68 : CE 1F 4F		stra,r2	timer_Q	; decrement timer_Q
+0C6B : 1C 00 00		bcta,eq	RESET				;   if == 0 go to RESET
+0C6E		sss5:
+
+0C6E : 0E 1F 4F		loda,r2	timer_Q	
+0C71 : 46 02		andi,r2	H'02'
+0C73 : 0E 6C 88		loda,r0	X0C88,r2			; if bit1 of timer_Q == 1
+0C76 : CC 1F 50		stra,r0	HC_down_arrow 			; then HC_down_arrow  =$80 else =$20
+0C79 : 0E 7F A5		loda,r0	score1H,r2			; look up either score1H or score2H
+0C7C : C1		strz	r1
+0C7D : 0E 7F A4		loda,r0	score1L,r2			; look up either score1L or score2L
+0C80 : 3F 0E 16		bsta,un	subr_display_score		; display score 1...
+0C83 : 04 03		lodi,r0	H'03'
+0C85 : CC 1F C3		stra,r0	scoreformat			;   as four digits at bottom
+
+0C88		three_bytes_data_0C73:				;	!!!!!!!DATA  AND  EXECUTABLE CODE  !!!!!!!
+0C88		X0C88:						;	I can only assume this was obfuscation	
+								;	As code, it does nothing significant
+								;	As data, either 0C88 or 0C8A are read at OC73
+0C88 : 20		eorz	r0					; HC down arrow for left player, $20
+0C89 : 50		rrr,r0						
+0C8A : 80		addz	r0					; HC down arrow for right player, $80	
+0C8B : 0D 1E 8B		loda,r1	console
+0C8E : F5 40		tmi,r1	H'40'
+0C90 : 1C 0C AE		bcta,eq	start_button				;  if the start button is pressed, goto start_button
+0C93 : F5 80		tmi,r1	H'80'
+0C95 : 9C 0C 3E		bcfa,eq	sss4				;  if the select button is not pressed go back to sss4
+
+
+0C98		sss6:					; REPEAT
+0C98 : 3F 0D 54		bsta,un	subr_wait_vert_reset	; ~~~~~~~~~~~~~~~~~~ wait for vertical reset ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+0C9B : 3F 0C C1		bsta,un	subr_1or2_player	;   display screen where number of players is selected
+0C9E : 09 EC		lodr,r1	*X0C8C 	;console	
+0CA0 : F5 80		tmi,r1	H'80'
+0CA2 : 18 74		bctr,eq	sss6			;   if the select button is still pressed go back
+									; UNTIL SELECT IS RELEASED
+
+
+0CA4 : 0E 1F AC		loda,r2	control_bits
+0CA7 : 26 01		eori,r2	H'01'
+0CA9 : CA FA		strr,r2	*X0CA5	@control_bits@	; invert bit1 of control_bits
+0CAB : 1F 0C 2B		bcta,un	sss2			; go back to sss2
+		;	------------
+
+
+0CAE		start_button:				; REPEAT
+0CAE : 3F 0D 54		bsta,un	subr_wait_vert_reset	;   ~~~~~~~~~~~~~~~~~~ wait for vertical reset ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+0CB1 : 3F 0C C1		bsta,un	subr_1or2_player	;   display screen where number of players is selected
+0CB4 : 09 D6		lodr,r1	*X0C8C	;console	
+0CB6 : F5 40		tmi,r1	H'40'
+0CB8 : 18 74		bctr,eq	START			; UNTIL START RELEASED
+
+
+
+0CBA : 0A E9		lodr,r2	*X0CA5 @control_bits@
+0CBC : 46 11		andi,r2	H'11'
+0CBE : CA E5		strr,r2	*X0CA5 @control_bits@	; clear bits 765321 of control_bits
+0CC0 : 17		retc,un
+
+
+		;============================================================
+		;============================================================
+0CC1		subr_1or2_player:       ; from 0C51, 0C9B, 0CB1
+0CC1 : 04 2D		lodi,r0	H'2D'
+0CC3 : CC 1F C1		stra,r0	colour12
+0CC6 : CC 1F C2		stra,r0	colour34		;  all object green
+0CC9 : 04 AA		lodi,r0	H'AA'
+0CCB : CC 1F C0		stra,r0	objectsizes		;  size %10
+
+
+0CCE : 05 0E		lodi,r1	H'0E'
+0CD0		loop0CD0:
+0CD0 : 0D 4E 6D		loda,r0	PL,r1,-			;REPEAT
+0CD3 : CD 7F 10		stra,r0	object2SHAPE,r1			; output "PL" to object 2
+0CD6 : 0D 6E 7B		loda,r0	AY,r1
+0CD9 : CD 7F 20		stra,r0	object3SHAPE,r1			; output "AY" to object 3
+0CDC : 0D 6E 89		loda,r0	ER,r1
+0CDF : CD 7F 40		stra,r0	object4SHAPE,r1			; output "ER" to object 4
+0CE2 : 0E 1F AC		loda,r2	control_bits
+0CE5 : F6 01		tmi,r2	H'01'
+0CE7 : 18 05		bctr,eq	s1o2p_1
+0CE9 : 0D 6E 51		loda,r0	the_number_one,r1		; if bit 0 of control_bits ==0, output "1"
+0CEC : 1B 03		bctr,un	s1o2p_2
+0CEE		s1o2p_1:
+0CEE : 0D 6E 5F		loda,r0	the_number_two,r1		; else output "2"
+0CF1		s1o2p_2:
+0CF1 : CD 7F 00		stra,r0	object1SHAPE,r1		;		to object 1
+0CF4 : 59 5A		brnr,r1	loop0CD0		;UNTIL 
+
+
+0CF6 : 3F 0D 9B		bsta,un	subr_wait_obj4_complete		; ~~~~~~~~~~~~~~~~~~WAIT for object 4 to be displayed~~~~~~~~~~~~~~~~~~~~~~
+
+0CF9 : 06 20		lodi,r2	H'20'				; r2 = $20
+0CFB : 0D 1F A3		loda,r1	control_bits_2
+0CFE : F5 80		tmi,r1	H'80'
+0D00 : 98 03		bcfr,eq	s1o2p_3				; if bit7 of control_bits_2 = 1
+0D02 : 0E 1F 50		loda,r2	HC_down_arrow 			; then object1HCB = HC_down_arrow		
+0D05		s1o2p_3:					; else object1HCB = $20
+0D05 : CE 1F 0B		stra,r2	object1HCB			; endif
+0D08 : 05 0A		lodi,r1	H'0A'				
+0D0A : 0E 1F 4E		loda,r2	timer_P	
+0D0D : 46 08		andi,r2	H'08'
+0D0F : 18 05		bctr,eq	s1o2p_4				; if bit 3 of timer_P == 1 
+0D11 : 07 FF		lodi,r3	H'FF'
+0D13 : CF 1F C1		stra,r3	colour12			; then colour12 are both black, hiding the arrow
+										; this must be how the arrow flashes.
+0D16		s1o2p_4:
+0D16 : 0D 4D 24		loda,r0	down_arrow,r1,-
+0D19 : CD 7F 00		stra,r0	object1SHAPE,r1			;  draw the down arrow
+0D1C : 59 78		brnr,r1	s1o2p_4
+0D1E : 05 55		lodi,r1	H'55'				;  set all sizes to %01
+0D20 : CD 1F C0		stra,r1	objectsizes
+0D23 : 17		retc,un
+
+
+		;============================================================
+		;============================================================
+0D24		down_arrow:
+0D24 : 08		db	H'08'	                ████            
+0D25 : 08		db	H'08'	                ████            
+0D26 : 08		db	H'08'	                ████            
+0D27 : 00		db	H'00'	                ████            
+0D28 : 08		db	H'08'	                ████            
+0D29 : 08		db	H'08'	                ████            
+0D2A : 63		db	H'63'	    ████████       	████████
+0D2B : 36		db	H'36'	   	████████    ████████    
+0D2C : 1C		db	H'1C'	            ████████████        
+0D2D : 08		db	H'08'	                ████           
+
+ 
+		;============================================================
+		;============================================================
+
+0D2E		subr_shape_B_trucks:
+0D2E							; from 09A5 with r2=$ff, then again with r2 as it was previously left by this subroutine
+							; the first two lines of the truck objects are blank
+										; repeat
+0D2E : 0C 1F 96		loda,r0	array_pointer_B_trucks		; r0 = offset within shape definitions for object 2
+0D31 : 82		addz	r2					; r0 = r0 + r2
+0D32 : 0C 2F 54		loda,r0	table_B_trucks,r0,+			; r0++ ; r0 = table_B_trucks,r0   
+												?? why the increment ??
+												@@ because the top wheels have already be drawn?
+0D35 : CE 3F 12		stra,r0	object2SHAPE_line3,r2,+			; r2++ ; store shape in object 2, starting at the third line
+
+0D38 : 0C 1F 97		loda,r0	array_pointer_B_trucks + 1		; r0 = offset within shape definitions for object 3
+0D3B : 82		addz	r2					; r0 = r0 + r2
+0D3C : 0C 6F 54		loda,r0	table_B_trucks,r0			; r0 = table_B_trucks,r0   
+0D3F : CE 7F 22		stra,r0	object3SHAPE_line3,r2			; store shape in object 3, starting at the third line
+
+0D42 : 0C 1F 98		loda,r0	array_pointer_B_trucks + 2		; r0 = offset within shape definitions for object 4
+0D45 : 82		addz	r2					; r0 = r0 + r2
+0D46 : 0C 6F 54		loda,r0	table_B_trucks,r0			; r0 = table_B_trucks,r0  
+0D49 : CE 7F 42		stra,r0	object4SHAPE_line3,r2			; store shape in object 4, starting at the third line
+										; until
+0D4C : E6 04		comi,r2	H'04'					; exit if r2=4, having done first 5 bytes of the shape
+0D4E : 14		retc,eq
+0D4F : E6 07		comi,r2	H'07'
+0D51 : 98 5B		bcfr,eq	subr_shape_B_trucks
+0D53 : 17		retc,un						; exit when all 8 bytes of shape have been done
+
+
+		;============================================================
+		;============================================================
+
+		; subroutine - wait for vertical reset to clear
+			; called from 0034, 02B0, 0AF5, 0B1C, 0C3E, 0C98, 0CAE
+
+			; so it does nothing during the whole flyback period?!
+			; not necessarily, it may already be set when it gets here
+
+0D54		subr_wait_vert_reset:
+0D54 : 75 02		cpsl	H'02'	;set COM bit to arithmetic compare	
+0D56		loop0D56:
+0D56 : 12		spsu		;test upper PSW (wait for Sense bit to be set? Vertical reset?)
+0D57 : 1A 7D		bctr,lt	loop0D56
+0D59		loop0D59:
+0D59 : 12		spsu		;test upper PSW (wait for Sense bit clear)
+0D5A : 9A 7D		bcfr,lt	loop0D59	
+0D5C : 77 02		ppsl	H'02'	;set COM to logical compare
+0D5E : 17		retc,un
+
+
+		;============================================================
+		;============================================================
+0D5F		subr_lillies:
+					; from $08B7 with r3=$5C, r2= index_A_lillies_colours
+					; from $086B with r3=$64, r2= index_B_lillies_colours
+
+?  I checked the value of r2 for the first few frames. On the first frame r2=0, which causes size and colour data to be fetched
+?  from the last three bytes of the previous data table, 00 FF FF, size 0, black.
+
+
+0D5F : 3F 0D 90		bsta,un	subr_obj_size_colour	; set size and colour of all objects as determined by r2
+							; (this presumably is where the log size gets reduced to %00)
+0D62 : 06 FF		lodi,r2	H'FF'
+0D64		sl_1:
+0D64 : 0E 2E 97		loda,r0	two_lillies,r2,+
+0D67 : CE 7F 10		stra,r0	object2SHAPE,r2		; output the top two rows of the lily shape
+0D6A : CE 7F 20		stra,r0	object3SHAPE,r2			
+0D6D : CE 7F 40		stra,r0	object4SHAPE,r2
+0D70 : E6 01		comi,r2	H'01'
+0D72 : 98 70		bcfr,eq	sl_1
+0D74 : 3F 0D C0		bsta,un	subr_horiz_pos_duplicates234	; set HC of lillies(x) as determined by r3
+0D77 : 3F 0D 9B		bsta,un	subr_wait_obj4_complete		; wait for logs to complete~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+0D7A : 07 54		lodi,r3	H'54'
+0D7C : CF 1F C0		stra,r3	objectsizes			; lillies size %01, frog size %00
+								; (now set the proper lily size)
+0D7F		sl_2:
+0D7F : 0E 2E 97		loda,r0	two_lillies,r2,+
+0D82 : CE 7F 10		stra,r0	object2SHAPE,r2		; output the remaining four (?) rows of the lily shape
+0D85 : CE 7F 20		stra,r0	object3SHAPE,r2
+0D88 : CE 7F 40		stra,r0	object4SHAPE,r2
+0D8B : E6 05		comi,r2	H'05'
+0D8D : 98 70		bcfr,eq	sl_2
+0D8F : 17		retc,un
+
+
+		;============================================================
+		;============================================================
+0D90		subr_obj_size_colour:		; from 06db with r2=06
+						; from 0840 with r2=09
+						; from 087D with r2=0C
+						; from 08D3 with r2=0F
+						; from 0914 with r2=12
+						; from 0D5F with r2= index_A_lillies_colours or r2= index_B_lillies_colours (3,15,18,1B)
+0D90 : 05 03		lodi,r1	H'03'
+0D92		sosc_1:
+0D92 : 0E 4E A6		loda,r0	LUT_colour_size,r2,-	; this is a block of data organised in blocks of three:
+								; size, colour, colour
+0D95 : CD 5F C0		stra,r0	objectsizes,r1,-		; sets the size and colour of all objects
+0D98 : 59 78		brnr,r1	sosc_1
+0D9A : 17		retc,un
+
+		;============================================================
+		;============================================================
+0D9B		subr_wait_obj4_complete:
+0D9B : 0F 1F CA		loda,r3	backgroundcollision_complete
+0D9E : F7 01		tmi,r3	H'01'
+0DA0 : 9C 0D 9B		bcfa,eq	subr_wait_obj4_complete
+0DA3 : 17		retc,un
+
+
+		;============================================================
+		;============================================================
+0DA4		subr_two_bytes_obj234:		
+				; from $0850 with r3=$86 (index to array_shape_A_logs[0-2])
+				; from $0885 with r3=$8C (index to array_shape_B_logs[0-2])
+0DA4 : 0F 7F 00		loda,r0	object1SHAPE,r3			; log-shape, 1f86 or 1f8c	
+0DA7 : CC 1F 10		stra,r0	object2SHAPE			;  put it in lines 1 and 2 of object2
+0DAA : CC 1F 11		stra,r0	object2SHAPE_line2
+0DAD : 0F 7F 01		loda,r0	object1SHAPE_line2,r3		; log shape, 1f87 or 1f8d
+0DB0 : CC 1F 20		stra,r0	object3SHAPE			; put it in lines 1 and 2 of object3
+0DB3 : CC 1F 21		stra,r0	object3SHAPE_line2
+0DB6 : 0F 7F 02		loda,r0	object1SHAPE_line3,r3		; log shape, 1f88 or 1f8e
+0DB9 : CC 1F 40		stra,r0	object4SHAPE			; put it in lines 1 and 2 of object4
+0DBC : CC 1F 41		stra,r0	object4SHAPE_line2
+0DBF : 17		retc,un
+
+
+		;============================================================
+		;============================================================
+0DC0		subr_horiz_pos_duplicates234:
+				; from $0833 with r3=$53 - A_logs
+				; from $0888 with r3=$59 - B_logs
+				; from $08C3 with r3=$5F - snake
+				; from $091E with r3=$62 - A_trucks
+				; from $0971 with r3=$65 - A_cars
+				; from $0986 with r3=$68 - B_cars
+				; from $09B4 with r3=$6B - B_trucks
+				; from $0D74 with r3=$5C - A_lillies
+					 or  with r3=$64 - B_lillies	
+
+0DC0 : 0F 7F 00		loda,r0	$1F00,r3	; fetch HC from 1F53, 1F59 etc
+0DC3 : CC 1F 1B		stra,r0	object2HCB
+0DC6 : 0F 7F 01		loda,r0	$1F01,r3
+0DC9 : CC 1F 2B		stra,r0	object3HCB
+0DCC : 0F 7F 02		loda,r0	$1F02,r3
+0DCF : CC 1F 4B		stra,r0	object4HCB
+0DD2 : 17		retc,un
+
+
+		;============================================================
+		;============================================================
+0DD3		subr_increase_score:		; from 05B2, 0586
+						; with r3 = value to add
+						; exits with r0=scoreL, r1=scoreH, and score variables updated
+0DD3 : 77 08		ppsl	H'08'				; with carry
+0DD5 : 75 01		cpsl	H'01'				; clear carry
+0DD7 : 0E 1F A3		loda,r2	control_bits_2			; fetch control_bits_2
+0DDA : F6 08		tmi,r2	H'08'				; if bit3==0,
+0DDC : 18 08		bctr,eq	sis_1
+0DDE : 0C 1F A4		loda,r0	score1L
+0DE1 : 0D 1F A5		loda,r1	score1H				; then get score 1 
+0DE4 : 1B 06		bctr,un	sis_2
+			
+0DE6		sis_1:
+0DE6 : 0C 1F A6		loda,r0	score2L				; else get score 2
+0DE9 : 0D 1F A7		loda,r1	score2H
+0DEC		sis_2:
+0DEC : 84 66		addi,r0	H'66'				
+0DEE : 85 66		addi,r1	H'66'
+0DF0 : 75 01		cpsl	H'01'				; clear carry
+0DF2 : 83		addz	r3				; perform BCD addition, scoreX = scoreX + r3
+0DF3 : 94		dar,r0
+0DF4 : 85 00		addi,r1	H'00'
+0DF6 : 95		dar,r1
+0DF7 : B5 01		tpsl	H'01'
+0DF9 : 98 05		bcfr,eq	sis_3				; if carry set   GAME HAS BEEN BEATEN!
+0DFB : 66 01		iori,r2	H'01'
+0DFD : CE 1F A3		stra,r2	control_bits_2			; so set bit 0 of control_bits_2
+0E00		sis_3:
+0E00 : F6 08		tmi,r2	H'08'				; if bit3==0,
+0E02 : 18 09		bctr,eq	sis_4
+0E04 : CC 1F A4		stra,r0	score1L				; save score player 1
+0E07 : CD 1F A5		stra,r1	score1H
+0E0A : 75 08		cpsl	H'08'				; without carry
+0E0C : 17		retc,un					; EXIT
+		
+0E0D		sis_4:
+0E0D : CC 1F A6		stra,r0	score2L				; save score player 2
+0E10 : CD 1F A7		stra,r1	score2H
+0E13 : 75 08		cpsl	H'08'				; without carry
+0E15 : 17		retc,un					; EXIT
+
+
+		;============================================================
+		;============================================================
+0E16		subr_display_score:
+				; from 0409 with r0=score L, r1=score H
+				; from 0430, 05B5, 0C4E, 0C80	
+0E16 : 59 0D		brnr,r1	L0E25		; if scoreH != 0, goto branch0e25
+0E18 : 05 FF		lodi,r1	H'FF'		; else r1=$ff (blank scoreH display)
+0E1A : 58 01		brnr,r0	L0E1D		; if scoreL not 0, goto branch0e1d
+0E1C : 01		lodz	r1		; else r0=r1=$ff   blank the score digits
+	
+0E1D		branch0E1D:			; r0, scoreL is not zero
+0E1D : E4 0F		comi,r0	H'0F'	
+0E1F : 19 0A		bctr,gt	output_score	; if the most significant digit is not 0, goto output_score
+0E21 : 64 F0		iori,r0	H'F0'		; else blank it and goto output_score
+0E23 : 1B 06		bctr,un	output_score
+		;
+0E25		branch0E25:			; scoreH is not 0, so leave score L alone
+0E25 : E5 0F		comi,r1	H'0F'
+0E27 : 19 02		bctr,gt	output_score	; if the most significant digit is not 0, goto output_score
+0E29 : 65 F0		iori,r1	H'F0'		; else blank it and...
+0E2B		output_score:			;  output_score
+0E2B : CD 1F C8		stra,r1	score12		; this is the high digits
+0E2E : CC 1F C9		stra,r0	score34		; this is the low digits
+0E31 : 17		retc,un
+
+
+		;============================================================
+		;============================================================
+0E32		subr_init_PVI:		; from 028F
+0E32 : 07 0A		lodi,r3	H'0A'
+0E34		loop0E34:
+0E34 : 0F 4E 9C		loda,r0	controlPVI,r3,-
+0E37 : CF 7F C0		stra,r0	objectsizes,r3 	; all objects size $00, all objects green
+						; blank score, 4 digits at bottom of screen
+						; enable grid, grid and screen both black					
+0E3A : 5B 78		brnr,r3	loop0E34
+
+0E3C : 07 04		lodi,r3	H'04'
+0E3E : CF 1E 80		stra,r3	NOISE		; PVI tone on ?
+0E41 : 07 0E		lodi,r3	H'0E'
+0E43 : CF 1F A8		stra,r3	grid_h1		; grid_h1 = %00001110
+
+0E46 : 07 FF		lodi,r3	H'FF'
+0E48 : CF 1F 1E		stra,r3	stopwatch		; stopwatch = $FF
+0E4B : 07 33		lodi,r3	H'33'
+0E4D : CF 1F 1F		stra,r3	lifes_left	; lifes_left = $33
+0E50 : 17		retc,un
+
+
+		;============================================================
+		;============================================================
+0E51				the_number_one:
+0E51 : 02		db	H'02'	                        ████    
+0E52 : 06		db	H'06'	                    ████████    
+0E53 : 06		db	H'06'	                    ████████    
+0E54 : 02		db	H'02'	                        ████    
+0E55 : 02		db	H'02'	                        ████    
+0E56 : 02		db	H'02'	                        ████    
+0E57 : 02		db	H'02'	                        ████    
+0E58 : 02		db	H'02'	                        ████    
+0E59 : 07		db	H'07'	                    ████████████
+0E5A : 07		db	H'07'	                    ████████████
+0E5B : 48		db	H'48'	
+0E5C : 20		db	H'20'	
+0E5D : 40		db	H'40'	
+0E5E : 80		db	H'80'	
+0E5F		the_number_two:
+0E5F : 06		db	H'06'	                    ████████    
+0E60 : 0F		db	H'0F'	                ████████████████
+0E61 : 09		db	H'09'	                ████        ████
+0E62 : 01		db	H'01'	                            ████
+0E63 : 07		db	H'07'	                    ████████████   
+0E64 : 0E		db	H'0E'	                ████████████    
+0E65 : 08		db	H'08'	                ████            
+0E66 : 08		db	H'08'	                ████            
+0E67 : 0F		db	H'0F'	                ████████████████
+0E68 : 0F		db	H'0F'	                ████████████████
+0E69 : 48		db	H'48'
+0E6A : 20		db	H'20'
+0E6B : 40		db	H'40'
+0E6C : 80		db	H'80'
+0E6D		PL:
+0E6D : F4		db	H'F4'	████████████████    ████        
+0E6E : F4		db	H'F4'	████████████████    ████        
+0E6F : 94		db	H'94'	████        ████    ████        
+0E70 : 94		db	H'94'	████        ████    ████        
+0E71 : F4		db	H'F4'	████████████████    ████        
+0E72 : F4		db	H'F4'	████████████████    ████        
+0E73 : 84		db	H'84'	████                ████        
+0E74 : 84		db	H'84'	████                ████        
+0E75 : 87		db	H'87'	████                ████████████
+0E76 : 87		db	H'87'	████                ████████████ 
+0E77 : 2E		db	H'2E'	
+0E78 : 30		db	H'30'	
+0E79 : 78		db	H'78'	
+0E7A : FE		db	H'FE'	
+0E7B		AY:
+0E7B : 75		db	H'75'	    ████████████    ████    ████
+0E7C : 75		db	H'75'	    ████████████    ████    ████
+0E7D : 55		db	H'55'	    ████    ████    ████    ████
+0E7E : 55		db	H'55'	    ████    ████    ████    ████
+0E7F : 77		db	H'77'	    ████████████    ████████████ 
+0E80 : 77		db	H'77'	    ████████████    ████████████ 
+0E81 : 52		db	H'52'	    ████    ████        ████    
+0E82 : 52		db	H'52'	    ████    ████        ████    
+0E83 : 52		db	H'52'	    ████    ████        ████    
+0E84 : 52		db	H'52'	    ████    ████        ████    
+0E85 : 4E		db	H'4E'	
+0E86 : 50		db	H'50'	
+0E87 : 78		db	H'78'	
+0E88 : FE		db	H'FE'	
+0E89		ER:			
+0E89 : EF		db	H'EF'	████████████    ████████████████
+0E8A : EF		db	H'EF'	████████████    ████████████████
+0E8B : 89		db	H'89'	████            ████        ████
+0E8C : 89		db	H'89'	████            ████        ████
+0E8D : CF		db	H'CF'	████████        ████████████████
+0E8E : CF		db	H'CF'	████████        ████████████████
+0E8F : 8A		db	H'8A'	████            ████    ████    
+0E90 : 8A		db	H'8A'	████            ████    ████    
+0E91 : E9		db	H'E9'	████████████    ████        ████
+0E92 : E9		db	H'E9'	████████████    ████        ████
+0E93 : 72		db	H'72'	
+0E94 : 74		db	H'74'	
+0E95 : 78		db	H'78'	
+0E96 : FE		db	H'FE'	
+
+0E97		two_lillies:
+0E97 : 42		db	H'42'	    ████                ████    
+0E98 : A5		db	H'A5'	████    ████        ████    ████
+0E99 : 42		db	H'42'	    ████                ████    
+0E9A : A5		db	H'A5'	████    ████        ████    ████
+0E9B : 42		db	H'42'	    ████                ████    
+
+0E9C		controlPVI:	; used at 0e34
+0E9C : 00		db	H'00'	; all objects size $00
+0E9D : 2D		db	H'2D'	; all objects green
+0E9E : 2D		db	H'2D'
+0E9F : 03		db	H'03'	; score, 4 digits at bottom of screen
+0EA0 : 00		db	H'00'
+0EA1 : 00		db	H'00'
+0EA2 : 08		db	H'08'	; enable grid, grid and screen both black
+0EA3 : 00		db	H'00'	
+0EA4 : FF		db	H'FF'	; blank score
+0EA5 : FF		db	H'FF'
+
+
+0EA6		LUT_colour_size:		; this is a block of data organised in blocks of three:
+							; size, colour, colour
+							; NOTE: indexing is pre-decremented, so r2 enters pointing to next block
+
+								;  r2=3
+0EA6 : 00		db	H'00'		; all size 0
+0EA7 : 28		db	H'28'		; frog is green, 234 are white
+0EA8 : 00		db	H'00'
+								;  r2=6
+0EA9 : 00		db	H'00'  		; all size 00
+0EAA : 2D		db	H'2D'		; all green
+0EAB : 2D		db	H'2D'
+								;  r2=9
+0EAC : FC		db	H'FC'		; 234 are size 11, frog is size 00
+0EAD : 29		db	H'29'		; frog is green, 234 are yellow
+0EAE : 09		db	H'09'
+								;  r2=C
+0EAF : 00		db	H'00'		; all size 00
+0EB0 : 29		db	H'29'		; frog is green, 234 are yellow
+0EB1 : 09		db	H'09'
+								;  r2=F
+0EB2 : 50		db	H'50'		; 34 are size 01, 12 are size 00
+0EB3 : 2B		db	H'2B'		; frog is green, 2 is red, 34 are black  
+0EB4 : 3F		db	H'3F'
+								;  r2=$12
+0EB5 : 54		db	H'54'		; 234 are size 01, frog is size 00
+0EB6 : 2B		db	H'2B'		; frog green, 2 red, 3 cyan, 4 white
+0EB7 : 20		db	H'20'
+								; r2=$15	(flashing lily)
+0EB8 : 00		db	H'00'		; all size 0
+0EB9 : 2E		db	H'2E'		; frog green, 2 blue, 34 white  
+0EBA : 00		db	H'00'
+								; r2=$18	(flashing lily)
+0EBB : 00		db	H'00'		; all size 0
+0EBC : 28		db	H'28'		; frog green, 24 white, 3 blue  
+0EBD : 30		db	H'30'
+								; r2=$1B	(flashing lily)
+0EBE : 00		db	H'00'		; all size 0
+0EBF : 28		db	H'28'		; frog green, 23 white, 4 blue 
+0EC0 : 06		db	H'06'
+
+		frog_in_hole:	;from 06BB
+0EC1 : 66		db	H'66'	    ████████        ████████    
+0EC2 : 5A		db	H'5A'	    ████    ████████    ████    
+0EC3 : 3C		db	H'3C'	   	████████████████        
+0EC4 : 42		db	H'42'	    ████                ████    
+0EC5 : 7E		db	H'7E'	    ████████████████████████    
+0EC6 : 24		db	H'24'	        ████        ████        
+0EC7 : 66		db	H'66'	    ████████        ████████    
+
+
+
+		LUT_speed_control:	; read at 0701, tested at 0708, 07AE, 0806
+
+					; ANDed with J_group_control, K_group_control, B_car_control
+					; if result != 0 the object is moved on current frame.
+					; bit 7, $80 is slowest; bit 0, $01 is fastest
+
+					; ANDed with snake_control 
+					; if result == 0 the object is moved on current frame.
+					; So when snake_control = $01, the snake is not moved.
+					; For the first two levels it stays hidden off the screen.
+							
+0EC8 : 8D		db	H'8D'	████            ████████    ████
+0EC9 : 77		db	H'77'	    ████████████    ████████████
+0ECA : 9F		db	H'9F'	████        ████████████████████
+0ECB : 6F		db	H'6F'	    ████████    ████████████████
+0ECC : 9B		db	H'9B'	████        ████████    ████████
+0ECD : 77		db	H'77'	    ████████████    ████████████
+0ECE : 2F		db	H'2F'	        ████    ████████████████
+0ECF : DF		db	H'DF'	████████    ████████████████████
+0ED0 : 2D		db	H'2D'	        ████    ████████    ████
+0ED1 : D7		db	H'D7'	████████    ████    ████████████
+0ED2 : 3B		db	H'3B'	   	████████████    ████████
+0ED3 : CF		db	H'CF'	████████        ████████████████
+0ED4 : 3F		db	H'3F'	   	████████████████████████
+0ED5 : D7		db	H'D7'	████████    ████    ████████████
+0ED6 : 2F		db	H'2F'	        ████    ████████████████
+0ED7 : 7B		db	H'7B'	    ████████████████    ████████
+				SPEED:	 7   8   9   10  12  13  14  16    / PER 16 FRAMES
+			  SNAKE SPEED:       8	      6       3       0    / PER 16 FRAMES
+
+
+0ED8		init_scratch:
+0ED8 : 00		db	H'00'	timer_P 
+0ED9 : 00		db	H'00'	timer_Q 
+0EDA : 00		db	H'00'	array_HC_frogs_in_holes [0-2]
+0EDB : 00		db	H'00'
+0EDC : 00		db	H'00'
+0EDD : 14		db	H'14'	array_ HC_A_logs [0-2]
+0EDE : 64		db	H'64'
+0EDF : BC		db	H'BC'
+0EE0 : 03		db	H'03'	array_HC_A_lillies[0-2]
+0EE1 : 53		db	H'53'
+0EE2 : A3		db	H'A3'
+0EE3 : 11		db	H'11'	array_ HC_B_logs [0-2]
+0EE4 : 64		db	H'64'
+0EE5 : B5		db	H'B5'
+0EE6 : 2A		db	H'2A'	array_HC_B_lillies [0-2]
+0EE7 : 52		db	H'52'
+0EE8 : AA		db	H'AA'
+0EE9 : E1		db	H'E1'	array_HC_snake [0-2]
+0EEA : E4		db	H'E4'
+0EEB : F4		db	H'F4'
+0EEC : 20		db	H'20'	array_HC_A_trucks [0-2]
+0EED : 78		db	H'78'
+0EEE : D2		db	H'D2'
+0EEF : 02		db	H'02'	array_HC_A_cars [0-2]
+0EF0 : 64		db	H'64'
+0EF1 : B0		db	H'B0'
+0EF2 : 29		db	H'29'	array_HC_B_cars [0-2]
+0EF3 : 75		db	H'75'
+0EF4 : D7		db	H'D7'
+0EF5 : 44		db	H'44'	array_HC_B_trucks[0-2]
+0EF6 : 99		db	H'99'
+0EF7 : F3		db	H'F3'
+
+0EF8		initialise_1:		; initialise $28 bytes starting at grid_v1. Executed at loop0287
+0EF8 : 00		db	H'00'	grid_v1
+0EF9 : 00		db	H'00'
+0EFA : 84		db	H'84'	holes in bank
+0EFB : 21		db	H'21'	holes in bank
+0EFC : 00		db	H'00'
+0EFD : 00		db	H'00'
+
+0EFE : FF		db	H'FF'	array_shape_A_logs[0-2]
+0EFF : FF		db	H'FF'
+0F00 : FF		db	H'FF'
+0F01 : 03		db	H'03'	status_A_lillies
+0F02 : 00		db	H'00'	counter_flash_A_lillies
+0F03 : 00		db	H'00'	index_A_lillies_colours
+0F04 : FF		db	H'FF'	array_shape_B_logs[0-2]
+0F05 : FF		db	H'FF'
+0F06 : FF		db	H'FF'
+0F07 : 03		db	H'03'	status_B_lillies 
+0F08 : 00		db	H'00'	counter_flash_B_lillies
+0F09 : 00		db	H'00'	index_B_lillies_colours
+0F0A : 80		db	H'80'	J_group_control
+0F0B : 10		db	H'10'	K_group_control 
+0F0C : 08		db	H'08'	B_car_control
+0F0D : 01		db	H'01'	snake_control
+0F0E : 40		db	H'40'	array_pointer_B_trucks[0-2]
+0F0F : 48		db	H'48'
+0F10 : 00		db	H'00'
+0F11 : 00		db	H'00'	frog_on_lily_log
+0F12 : 00		db	H'00'	joystick_udlr
+0F13 : 00		db	H'00'	frog_animation
+0F14 : 04		db	H'04'	hole_control
+0F15 : BF		db	H'BF'	max_HC_river
+0F16 : FF		db	H'FF'	max_HC_road 
+0F17 : FF		db	H'FF'	log_shape  
+0F18 : 00		db	H'00'	level
+0F19 : C8		db	H'C8'	timer_P_reset_value
+0F1A : 10		db	H'10'	speed_control_counter
+0F1B : 80		db	H'80'	control_bits_2
+0F1C : 00		db	H'00'	score1L	
+0F1D : 00		db	H'00'	score1H
+0F1E : 00		db	H'00'	score2L
+0F1F : 00		db	H'00'	score2H
+
+0F20		short_frog:
+0F20 : 00		db	H'00'
+0F21 : 00		db	H'00'
+0F22 : 24		db	H'24'	;  	        ████        ████        
+0F23 : 24		db	H'24'	;	        ████        ████        
+0F24 : BD		db	H'BD'	;	████    ████████████████    ████
+0F25 : 7E		db	H'7E'	;	    ████████████████████████    
+0F26 : 3C		db	H'3C'	;	   	████████████████        
+0F27 : 42		db	H'42'	;	    ████                ████    
+0F28 : 24		db	H'24'	;      	        ████        ████        
+0F29 : E7		db	H'E7'	;       ████████████        ████████████ 
+0F2A		XXXX:
+0F2A : 75		db	H'75'	; position data
+0F2B : FE		db	H'FE'	   
+0F2C : FC		db	H'FC'	
+0F2D : FE		db	H'FE'	
+
+
+0F2E		long_frog:
+0F2E : 24		db	H'24'		        ████        ████        
+0F2F : BD		db	H'BD'		████    ████████████████    ████
+0F30 : 7E		db	H'7E'		    ████████████████████████    
+0F31 : 3C		db	H'3C'		   	████████████████        
+0F32 : 00		db	H'00'
+0F33 : 24		db	H'24'		        ████        ████        
+0F34 : 24		db	H'24'		        ████        ████     
+0F35 : 24		db	H'24'		        ████        ████        
+0F36 : 00		db	H'00'
+0F37 : 66		db	H'66'		    ████████        ████████    
+
+
+0F38		snake_tongue:
+0F38 : 04		db	H'04'				    ████        
+0F39 : 00		db	H'00'
+0F3A : 80		db	H'80'		████            
+0F3B : 60		db	H'60'		    ████████    
+0F3C : 80		db	H'80'		████            
+0F3D : 04		db	H'04'				    ████        
+0F3E : 00		db	H'00'
+0F3F		snake_head:
+0F3F : 04		db	H'04'				    ████        
+0F40 : 6E		db	H'6E'		    ████████    ████████████    
+0F41 : BF		db	H'BF'		████    ████████████████████████
+0F42 : FB		db	H'FB'		████████████████████    ████████
+0F43 : B1		db	H'B1'		████    ████████            ████
+0F44 : 60		db	H'60'		    ████████    
+		snake_tail:
+0F45 : 00		db	H'00'
+0F46 : 08 1C BE F3	db	H'08', 				████           
+				H'1C'		            ████████████        
+				H'BE'		████    ████████████████████    
+				H'F3'		████████████████   	████████
+0F4A : E0 40		db	H'E0'		████████████    
+				H'40'		    ████  
+      
+0F4C		car:
+0F4C : 48		db	H'48'		    ████        ████            
+0F4D : B4		db	H'B4'		████    ████████    ████        
+0F4E : B4		db	H'B4'		████    ████████    ████        
+0F4F : B4		db	H'B4'		████    ████████    ████        
+0F50 : B4		db	H'B4'		████    ████████    ████        
+0F51 : 48		db	H'48'		    ████        ████            
+0F52 : 00		db	H'00'		
+0F53 : 00		db	H'00'		
+		table_B_trucks:
+0F54		V_truck:		;  *****why is this only 7 bytes, others are 8bytes************
+0F54 : DF		db	H'DF'	████████    ████████████████████
+0F55 : D5		db	H'D5'	████████    ████    ████    ████
+0F56 : F5		db	H'F5'	████████████████    ████    ████
+0F57 : F5		db	H'F5'	████████████████    ████    ████
+0F58 : F1		db	H'F1'	████████████████            ████
+0F59 : DB		db	H'DB'	████████    ████████    ████████
+0F5A : DF		db	H'DF'	████████    ████████████████████
+0F5B		O_truck:
+0F5B : 42		db	H'42'	    ████                ████    	
+0F5C : DF		db	H'DF'	████████    ████████████████████
+0F5D : D1		db	H'D1'	████████    ████            ████
+0F5E : F5		db	H'F5'	████████████████    ████    ████
+0F5F : F5		db	H'F5'	████████████████    ████    ████
+0F60 : F5		db	H'F5'	████████████████    ████    ████
+0F61 : D1		db	H'D1'	████████    ████            ████
+0F62 : DF		db	H'DF'	████████    ████████████████████
+0F63		L_truck:
+0F63 : 42		db	H'42'	    ████                ████    ;these wheels are the bottom wheels of the truck above
+0F64 : DF		db	H'DF'	████████    ████████████████████
+0F65 : D7		db	H'D7'	████████    ████    ████████████
+0F66 : D7		db	H'D7'	████████    ████    ████████████
+0F67 : F7		db	H'F7'	████████████████    ████████████
+0F68 : D7		db	H'D7'	████████    ████    ████████████
+0F69 : D1		db	H'D1'	████████    ████            ████
+0F6A : DF		db	H'DF'	████████    ████████████████████
+0F6B		T_truck:
+0F6B : 42		db	H'42'	    ████                ████    
+0F6C : DF		db	H'DF'	████████    ████████████████████
+0F6D : D1		db	H'D1'	████████    ████            ████
+0F6E : FB		db	H'FB'	████████████████████    ████████
+0F6F : FB		db	H'FB'	████████████████████    ████████
+0F70 : FB		db	H'FB'	████████████████████    ████████
+0F71 : DB		db	H'DB'	████████    ████████    ████████
+0F72 : DF		db	H'DF'	████████    ████████████████████
+0F73		M_truck:
+0F73 : 42		db	H'42'	    ████                ████    
+0F74 : FF		db	H'FF'	████████████████████████████████
+0F75 : DD		db	H'DD'	████████    ████████████    ████
+0F76 : C9		db	H'C9'	████████        ████        ████
+0F77 : D5		db	H'D5'	████████    ████    ████    ████
+0F78 : DD		db	H'DD'	████████    ████████████    ████
+0F79 : DD		db	H'DD'	████████    ████████████    ████
+0F7A : FF		db	H'FF'	████████████████████████████████
+0F7B		A_truck:
+0F7B : 42		db	H'42'	    ████                ████    
+0F7C : DF		db	H'DF'	████████    ████████████████████
+0F7D : DB		db	H'DB'	████████    ████████    ████████
+0F7E : D5		db	H'D5'	████████    ████    ████    ████ 
+0F7F : F5		db	H'F5'	████████████████    ████    ████
+0F80 : D1		db	H'D1'	████████    ████            ████
+0F81 : D5		db	H'D5'	████████    ████    ████    ████
+0F82 : DF		db	H'DF'	████████    ████████████████████
+0F83		C_truck:
+0F83 : 42		db	H'42'	    ████                ████    
+0F84 : 5F		db	H'5F'	    ████    ████████████████████
+0F85 : D1		db	H'D1'	████████    ████            ████
+0F86 : F7		db	H'F7'	████████████████    ████████████
+0F87 : F7		db	H'F7'	████████████████    ████████████
+0F88 : F7		db	H'F7'	████████████████    ████████████
+0F89 : D1		db	H'D1'	████████    ████            ████
+0F8A : 5F		db	H'5F'	    ████    ████████████████████
+0F8B		E_truck:
+0F8B : 42		db	H'42'	    ████                ████    
+0F8C : DF		db	H'DF'	████████    ████████████████████
+0F8D : D1		db	H'D1'	████████    ████            ████
+0F8E : F7		db	H'F7'	████████████████    ████████████
+0F8F : F3		db	H'F3'	████████████████   	████████
+0F90 : F7		db	H'F7'	████████████████    ████████████
+0F91 : D1		db	H'D1'	████████    ████            ████
+0F92 : DF		db	H'DF'	████████    ████████████████████
+0F93		plain_truck1:
+0F93 : 42		db	H'42'	    ████                ████    
+0F94 : DF		db	H'DF'	████████    ████████████████████
+0F95 : DF		db	H'DF'	████████    ████████████████████
+0F96 : FF		db	H'FF'	████████████████████████████████
+0F97 : FF		db	H'FF'	████████████████████████████████
+0F98 : FF		db	H'FF'	████████████████████████████████
+0F99 : DF		db	H'DF'	████████    ████████████████████
+0F9A : DF		db	H'DF'	████████    ████████████████████
+0F9B		plain_truck2:
+0F9B : 42		db	H'42'	    ████                ████    
+0F9C : DF		db	H'DF'	████████    ████████████████████
+0F9D : DF		db	H'DF'	████████    ████████████████████
+0F9E : FF		db	H'FF'	████████████████████████████████
+0F9F : FF		db	H'FF'	████████████████████████████████
+0FA0 : FF		db	H'FF'	████████████████████████████████
+0FA1 : DF		db	H'DF'	████████    ████████████████████
+0FA2 : DF		db	H'DF'	████████    ████████████████████
+0FA3 : 42		db	H'42'	    ████                ████    
+		;
+		A_trucks:
+0FA4		right_truck:
+0FA4 : 42		db	H'42'	    ████                ████    
+0FA5 : FB		db	H'FB'	████████████████████    ████████
+0FA6 : FB		db	H'FB'	████████████████████    ████████
+0FA7 : FF		db	H'FF'	████████████████████████████████
+0FA8 : FF		db	H'FF'	████████████████████████████████
+0FA9 : FF		db	H'FF'	████████████████████████████████
+0FAA : FB		db	H'FB'	████████████████████    ████████
+0FAB : FB		db	H'FB'	████████████████████    ████████
+0FAC : 42		db	H'42'	    ████                ████     
+		;
+
+
+
+
+0FAD		LUT_level_parameters:
+				; used in sub_level_control
+				; indexed by level (if it is less than $0F)
+
+					; if bit 7 ==1, J_group_control gets rotated right (faster, 5 occurences)
+					; if bit 6 ==1, K_group_control gets rotated right (faster, 5 occurences)
+					; if bit 5 ==1, B_car_control gets rotated right (faster, 10 occurences)
+					; if bit 4 ==1, snake_control gets rotated left, twice (7 occurences)
+								(snake_control takes the values $01,$04,$10,$40)
+								(When it is $01 the snake is not moved)
+								(It makes its first appearance in level 3)
+					; if bit 3 ==1, log_shape gets shifted left (shorter, 5 ocurences)
+					; if bit 2 ==1, max_HC_river is incremented by $10, (spaces out floating objects, 4 occurences)
+							max_HC_road is decremented by $10 (reduces gap in traffic,  4 occurences)
+								(they range from $BF to $FF)
+					; if bits 1 ==1, J_group_control gets rotated left (slower, 2 occurences)
+					; if bits 0 ==1, K_group_control gets rotated left (slower, 2 occurences)
+
+
+0FAD : 6C		db	H'6C'	; % 0110 1100   level 1    	( this table is used at the end of the level indicated, so
+0FAE : B0		db	H'B0'	; % 1011 0000   level 2			the data indicates the conditions experienced
+0FAF : 54		db	H'54'	; % 0101 0100   level 3			in the next level )
+0FB0 : 39		db	H'39'	; % 0011 1001   level 4
+0FB1 : 80		db	H'80'	; % 1000 0000   level 5
+0FB2 : 34		db	H'34'	; % 0011 0100   level 6
+0FB3 : 5A		db	H'5A'	; % 0101 1010   level 7
+0FB4 : 20		db	H'20'	; % 0010 0000   level 8
+0FB5 : 31		db	H'31'	; % 0011 0001   level 9
+0FB6 : A0		db	H'A0'	; % 1010 0000   level 10
+0FB7 : 48		db	H'48'	; % 0100 1000   level 11
+0FB8 : A4		db	H'A4'	; % 1010 0100   level 12
+0FB9 : 32		db	H'32'	; % 0011 0010   level 13
+0FBA : 60		db	H'60'	; % 0110 0000   level 14
+0FBB : 88		db	H'88'	; % 1000 1000   level 15
+
+
+
+0FBC		LUT_time_allowed:		;used at 03B8 
+0FBC : F8		db	H'F8'
+0FBD : FC		db	H'FC'
+0FBE : FE		db	H'FE'
+0FBF : FF		db	H'FF'
+
+
+
+0FC0				copyright:
+0FC0 : 4C 45 41 50	"LEAP"		db	"LEAPFROG. COPYRIGHT 1982 VOLTMACE LTD. 04 NOV 82 REV A"
+       46 52 4F 47	"FROG"
+       2E 00 00 00	".   "
+       00 00 00 00	"    "
+       43 4F 50 59	"COPY"
+       52 49 47 48	"RIGH"
+       54 00 31 39	"T 19"
+       38 32 00 00	"82  "
+       56 4F 4C 54	"VOLT"
+       4D 41 43 45	"MACE"
+       00 4C 54 44	" LTD"
+       2E 00 00 00	".   "
+       30 34 00 4E	"04 N"
+       4F 56 00 38	"OV 8"
+       32 00 00 52	"2  R"
+       45 56 00 41	"EV A"
